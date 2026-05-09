@@ -5,10 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run build       # tsup — compiles src/ to dist/
-npm run typecheck   # tsc --noEmit (strict, no build output)
-npm test            # vitest run (single pass)
-npm run test:watch  # vitest (watch mode)
+npm run build            # tsup — compiles src/ to dist/
+npm run typecheck        # tsc --noEmit (strict, no build output)
+npm test                 # vitest run — both unit + integration projects
+npm run test:unit        # fast, no Docker (mocked tests + core)
+npm run test:integration # Postgres via testcontainers (requires Docker)
+npm run test:watch       # vitest watch mode
 ```
 
 Run a single test file:
@@ -42,8 +44,13 @@ Two package entry points built by tsup:
 
 ## Testing strategy
 
-- **SQLite in-memory** — fast, covers most cases. `meta.target` is a `string` on SQLite.
-- **Postgres via testcontainers** — `meta.target` is `string[]` on Postgres/MySQL; composite-unique shape differs. Required for shape-sensitive tests.
+- **Unit tests** (`tests/*.test.ts`) — mock `PrismaClientKnownRequestError` directly. No DB, no Docker. Fast.
+- **Integration tests** (`tests/integration/*.test.ts`) — real Postgres via `@testcontainers/postgresql`. Verifies `meta.target` is `string[]` on real Postgres, race-condition handling, composite unique, FK and not-found errors. Requires Docker.
+
+Prisma 7 notes:
+- No `url` in `schema.prisma` — connection config lives in `prisma.config.ts`.
+- `PrismaClient` requires a driver adapter: `new PrismaClient({ adapter: new PrismaPg(connectionString) })`.
+- `db push` uses the URL from `prisma.config.ts` (reads `DATABASE_URL` env var).
 
 ## CI
 

@@ -554,6 +554,21 @@ const EmailSchema = unique(
 
 ---
 
+## Future: additional DB providers in integration tests
+
+Integration tests are Postgres-only today. To add MySQL, MariaDB, MSSQL, etc.:
+
+1. **Separate Prisma schema** — Prisma 7 cannot switch `provider` via env var. Create `prisma/schema.{driver}.prisma` with the target provider. Set `output = "../node_modules/.prisma/client-{driver}"` on its `generator` block to avoid clobbering the default client.
+2. **Install testcontainers module** — e.g. `@testcontainers/mysql` for MySQL.
+3. **Update `prisma.config.ts`** — add the shadow DB URL if needed, or create a second config file per provider.
+4. **Add a globalSetup entry** — spin up the new container, run `prisma db push --schema=prisma/schema.{driver}.prisma`.
+5. **Add test file** — `tests/integration/{driver}.test.ts`, import from the provider-specific generated client path. Each driver's `meta.target` shape may differ — that's what the tests pin down.
+6. **CI matrix** — add a job per driver in `.github/workflows/test.yml`.
+
+Estimated effort: ~1-2 hours per added DB.
+
+---
+
 ## Working with Claude Code
 
 Claude Code works best on this project when you:

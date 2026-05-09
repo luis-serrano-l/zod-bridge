@@ -5,16 +5,31 @@ export class PrismaUniqueConstraintError extends Error {
   readonly fields: string[]
 
   constructor(original: Prisma.PrismaClientKnownRequestError) {
-    const target = original.meta?.["target"]
-    const fields = Array.isArray(target)
-      ? (target as string[])
-      : typeof target === "string"
-        ? [target]
-        : []
+    const fields = extractUniqueFields(original.meta)
     super(`Unique constraint failed on: ${fields.join(", ")}`)
     this.name = "PrismaUniqueConstraintError"
     this.fields = fields
   }
+}
+
+// Prisma 7 with driver adapter: meta.driverAdapterError.cause.constraint.fields
+// Prisma ≤6 and Prisma 7 without adapter: meta.target (string | string[])
+function extractUniqueFields(meta: Record<string, unknown> | undefined): string[] {
+  const driverFields = (
+    meta?.["driverAdapterError"] as { cause?: { constraint?: { fields?: unknown } } } | undefined
+  )?.cause?.constraint?.fields
+  if (Array.isArray(driverFields)) return (driverFields as string[]).map(unquote)
+
+  const target = meta?.["target"]
+  if (Array.isArray(target)) return (target as string[]).map(unquote)
+  if (typeof target === "string") return [unquote(target)]
+
+  return []
+}
+
+// Postgres quotes camelCase identifiers: `"userId"` → `userId`
+function unquote(s: string): string {
+  return s.startsWith('"') && s.endsWith('"') ? s.slice(1, -1) : s
 }
 
 export class PrismaNotFoundError extends Error {
