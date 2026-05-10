@@ -125,15 +125,20 @@ MIT. Standard for this category of library. File goes in repo root in Phase 0.
 
 Two layers:
 
-- **SQLite in-memory** — fast unit tests, runs in CI in seconds. Covers
-  `handlePrismaError`, `findOrThrow`, and error class `instanceof` checks.
-  Setup: `prisma/schema.prisma` pointing at `file::memory:?cache=shared`.
+Two test layers:
 
-- **Postgres via testcontainers** — error-shape-sensitive tests only.
-  `meta.target` is `string[]` on Postgres/MySQL but `string` on SQLite;
-  composite-unique behaviour also differs. These tests catch bugs that
-  SQLite passes silently. Run in the CI matrix alongside SQLite, not as a
-  replacement.
+- **Unit tests** (`tests/*.test.ts`) — mock `PrismaClientKnownRequestError`
+  directly. No DB, no Docker. Fast. Covers error class shapes and helpers.
+
+- **Postgres integration tests** (`tests/integration/`) — real Postgres via
+  `@testcontainers/postgresql`. Required: Prisma 7 changed the P2002 meta
+  structure when using a driver adapter (`meta.driverAdapterError.cause
+  .constraint.fields` instead of `meta.target`). Also catches Postgres
+  quoting of camelCase identifiers. CI runs both as parallel jobs.
+
+Prisma 7 note: `PrismaClient` requires a driver adapter (e.g.
+`@prisma/adapter-pg`). Connection URL moves to `prisma.config.ts`, not
+`schema.prisma`.
 
 ### CI/CD baseline
 
@@ -220,7 +225,7 @@ feature, not a bug.
 - [x] Zod v4-only decision recorded
 - [x] Peer-deps rationale recorded
 - [x] License decision recorded
-- [x] Testing strategy (SQLite + Postgres testcontainers) recorded
+- [x] Testing strategy (unit mocks + Postgres testcontainers, Prisma 7 adapter) recorded
 - [x] CI/CD baseline recorded
 - [x] Update-op API (`excludeWhere`) recorded
 - [x] Composite unique API recorded
@@ -296,13 +301,13 @@ Publish to npm as `0.1.0` when:
 
 ### Checklist
 
-- [ ] `src/adapters/prisma/errors.ts` — 4 error classes (P2002, P2025, P2003, P2014)
-- [ ] `src/adapters/prisma/helpers.ts` — `handlePrismaError`, `findOrThrow`
-- [ ] `src/internal/error-adapter.ts` — native-vs-fallback detection
-- [ ] Tests: `instanceof` works for all 4 classes
-- [ ] Tests: composite unique mapping works
-- [ ] README example
-- [ ] CI green
+- [x] `src/adapters/prisma/errors.ts` — 4 error classes (P2002, P2025, P2003, P2014)
+- [x] `src/adapters/prisma/helpers.ts` — `handlePrismaError`, `findOrThrow`
+- [x] `src/internal/error-adapter.ts` — native-vs-fallback detection
+- [x] Tests: `instanceof` works for all 4 classes
+- [x] Tests: composite unique mapping works (unit + Postgres integration)
+- [x] README example
+- [x] CI green
 - [ ] Published to npm as `0.1.0`
 
 ---
@@ -437,12 +442,12 @@ const LikeSchema = uniqueComposite(
 
 ### Checklist
 
-- [ ] `src/core/index.ts` — `unique()` wrapper
-- [ ] `src/core/index.ts` — `uniqueComposite()` wrapper
-- [ ] `src/adapters/prisma/index.ts` — `prismaUnique`
-- [ ] `src/adapters/prisma/index.ts` — `prismaUniqueComposite`
-- [ ] Tests: parseAsync path, excludeWhere, composite
-- [ ] README documents `parseAsync` requirement
+- [x] `src/core/index.ts` — `unique()` wrapper
+- [x] `src/core/index.ts` — `uniqueComposite()` wrapper
+- [x] `src/adapters/prisma/index.ts` — `prismaUnique`
+- [x] `src/adapters/prisma/index.ts` — `prismaUniqueComposite`
+- [x] Tests: parseAsync path, excludeWhere, composite
+- [x] README documents `parseAsync` requirement
 
 ---
 
@@ -579,5 +584,4 @@ Claude Code works best on this project when you:
 - Use it to draft the GitHub comment, PR description, and blog post
 - Ask it to update `error-adapter.ts` if Prisma merges the typed errors PR
 - Ask it to scaffold the GitHub Actions workflows in Phase 0
-- Ask it to set up the SQLite test environment in Phase 0
 - Ask it to generate the example apps after Phase 1 is feature complete

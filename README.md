@@ -29,6 +29,25 @@ npm install zod-bridge
 
 Peer dependencies: `zod ^4.0.0`, `@prisma/client ^5–7` (optional, only needed for the `/prisma` import).
 
+### Prisma 7 setup
+
+Prisma 7 requires a [driver adapter](https://www.prisma.io/docs/orm/overview/databases/database-drivers) instead of a connection URL in the schema. Install the pg adapter and pass it to `PrismaClient`:
+
+```bash
+npm install @prisma/adapter-pg pg
+```
+
+```ts
+import { PrismaPg } from "@prisma/adapter-pg"
+import { PrismaClient } from "@prisma/client"
+
+const prisma = new PrismaClient({
+  adapter: new PrismaPg(process.env.DATABASE_URL),
+})
+```
+
+Prisma 5/6 users: no changes needed — `new PrismaClient()` works as before.
+
 ## Typed Prisma errors
 
 ```ts
