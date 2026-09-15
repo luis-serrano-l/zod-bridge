@@ -1,25 +1,25 @@
 import type { ZodTypeAny } from "zod"
 
 export type UniqueOptions = {
-  message?: string
-  excludeWhere?: unknown
+  readonly message?: string
+  readonly excludeWhere?: unknown
 }
 
 type UniqueFn<T> = (val: T, opts?: UniqueOptions) => Promise<boolean>
 
-export function unique<S extends ZodTypeAny>(
-  schema: S,
-  check: UniqueFn<S["_output"]>,
+export function unique<TSchema extends ZodTypeAny>(
+  schema: TSchema,
+  check: UniqueFn<TSchema["_output"]>,
   options?: string | UniqueOptions,
-): S {
+): TSchema {
   const message =
     typeof options === "string" ? options : (options?.message ?? "Value already taken")
   const excludeWhere = typeof options === "object" ? options.excludeWhere : undefined
 
-  return schema.superRefine(async (val: S["_output"], ctx) => {
+  return schema.superRefine(async (val: TSchema["_output"], ctx) => {
     const isUnique = await check(val, { excludeWhere })
     if (!isUnique) ctx.addIssue(message)
-  }) as S
+  }) as TSchema
 }
 
 export const uniqueComposite = unique

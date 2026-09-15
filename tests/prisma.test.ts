@@ -26,6 +26,33 @@ describe("prisma adapter", () => {
     expect(err.fields).toEqual(["email"])
   })
 
+  it("PrismaUniqueConstraintError reads driver-adapter constraint.fields (Prisma 7 ≤7.9)", () => {
+    const err = new PrismaUniqueConstraintError(
+      knownError("P2002", {
+        driverAdapterError: { cause: { constraint: { fields: ['"userId"', '"postId"'] } } },
+      }),
+    )
+    expect(err.fields).toEqual(["userId", "postId"])
+  })
+
+  it("PrismaUniqueConstraintError derives fields from constraint.index (Prisma 7.10+)", () => {
+    const single = new PrismaUniqueConstraintError(
+      knownError("P2002", {
+        driverAdapterError: { cause: { constraint: { index: "User_email_key" }, table: "User" } },
+      }),
+    )
+    expect(single.fields).toEqual(["email"])
+
+    const composite = new PrismaUniqueConstraintError(
+      knownError("P2002", {
+        driverAdapterError: {
+          cause: { constraint: { index: "Like_userId_postId_key" }, table: "Like" },
+        },
+      }),
+    )
+    expect(composite.fields).toEqual(["userId", "postId"])
+  })
+
   it("PrismaNotFoundError instanceof check", () => {
     const err = new PrismaNotFoundError(knownError("P2025", { cause: "No User found" }))
     expect(err).toBeInstanceOf(PrismaNotFoundError)
@@ -39,6 +66,15 @@ describe("prisma adapter", () => {
     expect(err).toBeInstanceOf(PrismaForeignKeyError)
     expect(err).toBeInstanceOf(Error)
     expect(err.code).toBe("P2003")
+    expect(err.fieldName).toBe("authorId")
+  })
+
+  it("PrismaForeignKeyError derives fieldName from constraint.index (Prisma 7.10+)", () => {
+    const err = new PrismaForeignKeyError(
+      knownError("P2003", {
+        driverAdapterError: { cause: { constraint: { index: "Post_authorId_fkey" } } },
+      }),
+    )
     expect(err.fieldName).toBe("authorId")
   })
 
