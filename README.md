@@ -42,6 +42,17 @@ npm install zod-bridge
 
 Peer dependencies: `zod ^4.0.0`, `@prisma/client ^5–7` (optional, only needed for the `/prisma` import). Requires Node ≥ 22.12.
 
+### Two entry points
+
+| Import | Contents | Depends on |
+|--------|----------|------------|
+| `zod-bridge` | `unique()`, `uniqueComposite()` — ORM-agnostic Zod validators | `zod` only |
+| `zod-bridge/prisma` | Typed error classes, `handlePrismaError`, `findOrThrow`, `prismaUnique*` | `zod` + `@prisma/client` |
+
+The root export is kept free of any database dependency on purpose. The Prisma adapter does a runtime `import { Prisma } from "@prisma/client"` (needed for the `instanceof` check in `handlePrismaError`), so re-exporting it from `zod-bridge` would make `@prisma/client` mandatory for everyone, including users who only want the Zod validators with a different ORM or a raw query.
+
+Prisma is currently the only adapter implemented. The core is written so that other ORMs (e.g. Drizzle) can be added as `zod-bridge/<adapter>` without touching the root export or the Prisma adapter.
+
 ### Prisma 7 setup
 
 Prisma 7 requires a [driver adapter](https://www.prisma.io/docs/orm/overview/databases/database-drivers) instead of a connection URL in the schema. Install the pg adapter and pass it to `PrismaClient`:
