@@ -201,6 +201,19 @@ try {
 }
 ```
 
+## AI agents
+
+If an AI coding agent writes your Prisma + Zod code, `zod-bridge` pays off twice.
+
+**Less code to generate.** Without it, every call site needs the same hand-written boilerplate: check `e.code === "P2002"`, parse `meta.target`, fall back to `meta.constraint.index` on Prisma 7.10+ (which no longer ships a field list), and hand-roll an async `.refine()` with a `findFirst` plus an exclusion clause for updates. With it, that collapses to `instanceof PrismaUniqueConstraintError` and one `unique()` call.
+
+**Fewer wrong-first-try generations.** Agents burn most of their tokens on retry loops, not on the initial write. Prisma's error shape has gotchas an agent won't know about a given project — driver-adapter errors carrying only the index name, composite primary keys, non-`id` PK names on update. Each one is a failing test, a re-read, and a rewrite. `handlePrismaError`, `prismaUnique`, and `excludeWhere` encode that knowledge once, so the agent gets it right on the first pass.
+
+Two things an agent should be told at the call site:
+
+- `unique()` / `uniqueComposite()` require `parseAsync` — `.parse()` throws at runtime.
+- The Zod check is best-effort; always pair it with `handlePrismaError` for the race-condition slip-through (see [Race conditions](#race-conditions)).
+
 ## License
 
 MIT
