@@ -183,21 +183,12 @@ const schema = unique(
 `@@unique([userId, postId])` is common for likes, follows, memberships.
 P2002 returns multiple fields in `meta.target` for these.
 
-Decision: support composite from Phase 1, both for the error handler and the
-validator. The `unique` array format avoids the brittle comma-separated string
-keys (`"userId,postId"`) that are order-sensitive and easy to typo:
+Decision: support composite from Phase 1, both in the error classes
+(`PrismaUniqueConstraintError.fields: string[]`) and the validator. Fields are
+always arrays, which avoids the brittle comma-separated string keys
+(`"userId,postId"`) that are order-sensitive and easy to typo:
 
 ```ts
-// Error handling
-handlePrismaError(e, {
-  unique: [
-    { fields: ["userId", "postId"], message: "Already liked this post" },
-    { fields: ["email"],            message: "Email taken" },
-  ],
-  default: "Value already exists"
-})
-
-// Validator (composite uniqueness across two fields)
 import { uniqueComposite } from "zod-bridge"
 import { prismaUniqueComposite } from "zod-bridge/prisma"
 
@@ -207,6 +198,9 @@ const LikeSchema = uniqueComposite(
   "Already liked this post"
 )
 ```
+
+A `handlePrismaError(e, { unique: [...] })` message map was considered and
+dropped; see DECISIONS.md. Phase 4's `createSchema` covers that need.
 
 ### Race condition handling
 

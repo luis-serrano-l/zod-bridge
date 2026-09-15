@@ -46,16 +46,17 @@ unique(z.email(), prismaUnique(prisma.user, "email"), {
 
 ## Composite unique constraints
 
-`@@unique([userId, postId])` is common. P2002 returns multiple fields in `meta.target`. Support composite from Phase 1, both for the error handler and the validator. Array format avoids brittle comma-separated string keys:
+`@@unique([userId, postId])` is common. P2002 returns multiple fields in `meta.target`. Composite is supported from Phase 1 in both the error classes (`PrismaUniqueConstraintError.fields` is a `string[]`) and the validator. Fields are always passed as arrays, never comma-separated strings, so they are order-independent and typo-safe:
 
 ```ts
-handlePrismaError(e, {
-  unique: [
-    { fields: ["userId", "postId"], message: "Already liked this post" },
-    { fields: ["email"],            message: "Email taken" },
-  ],
-})
+uniqueComposite(
+  z.object({ userId: z.number(), postId: z.number() }),
+  prismaUniqueComposite(prisma.like, ["userId", "postId"]),
+  "Already liked this post",
+)
 ```
+
+A per-constraint message map on `handlePrismaError` (`{ unique: [{ fields, message }] }`) was considered and dropped. It would duplicate the messages already given to `unique()`, and field matching is unreliable on Prisma 7.10+ where fields are derived from the index name. Phase 4's `createSchema` owns both the validators and their messages, so it is the right place to translate race-condition slip-throughs into the same field-level error the pre-check produces.
 
 ## Race condition handling
 

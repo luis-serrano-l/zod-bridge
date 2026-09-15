@@ -86,8 +86,8 @@ prismaUnique(model, field)                    // check fn for unique()
 prismaUniqueComposite(model, fields: string[]) // check fn for uniqueComposite()
 ```
 
-`handlePrismaError` takes **no options object**. DECISIONS.md sketches a `{ unique: [...] }`
-config for custom messages; that was never implemented. Don't document it as existing.
+`handlePrismaError` takes **no options object**. A per-constraint message map was considered and
+dropped (see DECISIONS.md); Phase 4's `createSchema` is where that translation belongs.
 
 ## Rules that are easy to get wrong
 
