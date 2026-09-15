@@ -11,6 +11,7 @@ npm test                 # vitest run — both unit + integration projects
 npm run test:unit        # fast, no Docker (mocked tests + core)
 npm run test:integration # Postgres via testcontainers (requires Docker)
 npm run test:watch       # vitest watch mode
+cd examples/demo && docker compose up --build --abort-on-container-exit   # dockerized demo (README screenshot)
 ```
 
 Run a single test file:
@@ -35,6 +36,9 @@ Two package entry points built by tsup:
 
 ## Key design decisions
 
+- **TypeScript stays on 6.x** — tsup's `.d.ts` bundler crashes on TS 7.0 (no compiler API until 7.1). `ignoreDeprecations: "6.0"` in tsconfig silences the `baseUrl` error tsup's dts step triggers.
+- **testcontainers stays on 11.x** — v12 requires Node ≥ 22.22.
+- **Prisma 7.10+ driver-adapter errors carry only `constraint.index`** (`User_email_key`, `Post_authorId_fkey`), not field lists. `errors.ts` derives fields from the index name as a fallback.
 - **Zod v4 only** — v3 broke `instanceof`, error API, and internals. No cross-version support.
 - **`zod` and `@prisma/client` are peerDependencies** — two Zod copies break `instanceof`; type compat requires the user's version.
 - **`unique()` requires `parseAsync`** — uses `.superRefine()` which is async. Document this at call sites; `.parse()` will throw.

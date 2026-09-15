@@ -1,0 +1,19 @@
+{
+  "name": "zod-bridge-demo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "prisma db push && tsx main.ts"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "pg": "^8.23.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "prisma": "^7.10.0",
+    "tsx": "^4.23.13"
+  }
+}

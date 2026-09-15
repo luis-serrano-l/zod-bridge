@@ -1,0 +1,24 @@
+services:
+  db:
+    image: postgres:16-alpine
+    attach: false   # keep Postgres logs out of the demo output
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: demo
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d demo"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  demo:
+    build:
+      context: ../..
+      dockerfile: examples/demo/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/demo
+    depends_on:
+      db:
+        condition: service_healthy
+    tty: true

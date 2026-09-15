@@ -21,13 +21,26 @@ z.string().email().unique(async (val) => !await db.user.findFirst({ where: { ema
 
 `zod-bridge` fills both gaps.
 
+## Demo
+
+A dockerized example that installs `zod-bridge` from a freshly packed tarball and runs every feature against a real Postgres. Requires Docker only:
+
+```bash
+cd examples/demo
+docker compose up --build --abort-on-container-exit
+```
+
+![zod-bridge demo](docs/demo.gif)
+
+Source: [`examples/demo/main.ts`](examples/demo/main.ts).
+
 ## Install
 
 ```bash
 npm install zod-bridge
 ```
 
-Peer dependencies: `zod ^4.0.0`, `@prisma/client ^5–7` (optional, only needed for the `/prisma` import).
+Peer dependencies: `zod ^4.0.0`, `@prisma/client ^5–7` (optional, only needed for the `/prisma` import). Requires Node ≥ 22.12.
 
 ### Prisma 7 setup
 
