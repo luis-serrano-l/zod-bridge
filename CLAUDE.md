@@ -144,6 +144,11 @@ Prisma 7 specifics used here:
   `integration` job: Node 22, Docker available on the runner.
 - `publish.yml` — on `v*` tag push: typecheck, full tests, build, `npm publish --provenance`.
   Needs `id-token: write` (present) and `NPM_TOKEN` secret.
+- **Every job runs `npx prisma generate` right after `npm ci`.** Prisma 7 dropped the postinstall
+  auto-generate, so a fresh runner has no `node_modules/.prisma/client`: without it typecheck fails
+  with `Module '"@prisma/client"' has no exported member 'Prisma'` (a missing client, not a real
+  type error) and the integration suite fails to import. It passes locally only because your
+  `node_modules` already holds a generated client. Any new job needs the same step.
 - **Before any publish**: test the package in a real project first (`npm link` or install the
   tarball from `npm pack`), or at minimum run the demo. Never tag a release without this.
 
