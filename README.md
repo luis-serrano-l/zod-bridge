@@ -15,11 +15,19 @@ catch (e) {
 And Zod has no built-in way to check uniqueness against the database:
 
 ```ts
-// This doesn't exist in Zod
-z.string().email().unique(async (val) => !await db.user.findFirst({ where: { email: val } }))
+// Zod has no equivalent of this. You hand-roll an async refine at every call site:
+z.string().email().refine(
+  async (val) => !(await db.user.findFirst({ where: { email: val } })),
+  "Email already taken",
+)
 ```
 
-`zod-bridge` fills both gaps.
+`zod-bridge` fills both gaps. The uniqueness check is a wrapper, not a method, because Zod v4 has no
+plugin API and patching `ZodType.prototype` breaks with a second Zod copy:
+
+```ts
+unique(z.email(), prismaUnique(prisma.user, "email"), "Email already taken")
+```
 
 ## Demo
 
@@ -157,7 +165,7 @@ const EmailSchema = unique(
 )
 ```
 
-`prismaUnique` adds `NOT: { id: currentUser.id }` to the Prisma query, so editing a user's own email doesn't report "already taken". `excludeWhere` accepts a full Prisma `where` fragment — handles composite PKs and non-`id` primary key names.
+`prismaUnique` adds `NOT: { id: currentUser.id }` to the Prisma query, so editing a user's own email doesn't report "already taken". `excludeWhere` accepts a full Prisma `where` fragment — handles composite PKs and non-`id` primary key names. It is typed as the model's `WhereInput`, inferred from the model you pass to `prismaUnique`, so unknown fields are a type error and your editor autocompletes it.
 
 ### Composite unique constraints
 

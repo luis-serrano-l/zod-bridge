@@ -42,10 +42,15 @@ type FindFirstModel = {
   findFirst(args?: { where?: any }): Promise<unknown>
 }
 
-export function prismaUnique(
-  model: FindFirstModel,
+/** The model's `WhereInput`, recovered from its `findFirst` signature. */
+type WhereOf<M extends FindFirstModel> = NonNullable<
+  NonNullable<Parameters<M["findFirst"]>[0]>["where"]
+>
+
+export function prismaUnique<M extends FindFirstModel>(
+  model: M,
   field: string,
-): (val: unknown, opts?: UniqueOptions) => Promise<boolean> {
+): (val: unknown, opts?: UniqueOptions<WhereOf<M>>) => Promise<boolean> {
   return async (val, opts) => {
     const where = opts?.excludeWhere
       ? { [field]: val, NOT: opts.excludeWhere }
@@ -55,10 +60,10 @@ export function prismaUnique(
   }
 }
 
-export function prismaUniqueComposite(
-  model: FindFirstModel,
+export function prismaUniqueComposite<M extends FindFirstModel>(
+  model: M,
   fields: string[],
-): (val: Record<string, unknown>, opts?: UniqueOptions) => Promise<boolean> {
+): (val: Record<string, unknown>, opts?: UniqueOptions<WhereOf<M>>) => Promise<boolean> {
   return async (val, opts) => {
     const fieldWhere = Object.fromEntries(fields.map((f) => [f, val[f]]))
     const where = opts?.excludeWhere ? { ...fieldWhere, NOT: opts.excludeWhere } : fieldWhere

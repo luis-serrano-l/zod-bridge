@@ -73,7 +73,7 @@ Adding an adapter (Drizzle, Kysely): new folder `src/adapters/<name>/`, new tsup
 // zod-bridge
 unique(schema, check, options?: string | { message?, excludeWhere? })   // returns schema.superRefine(async ...)
 uniqueComposite === unique   // alias; the check fn receives the whole object
-type UniqueOptions
+type UniqueOptions<TExclude = unknown>   // TExclude = type of excludeWhere, inferred from the check fn
 
 // zod-bridge/prisma
 class PrismaUniqueConstraintError   { code: "P2002"; fields: string[] }
@@ -82,8 +82,8 @@ class PrismaForeignKeyError         { code: "P2003"; fieldName: string }
 class PrismaRelationViolationError  { code: "P2014"; relationName: string }
 handlePrismaError(err): never       // rethrows typed, or rethrows the original untouched
 findOrThrow(() => Promise<T | null>): Promise<T>
-prismaUnique(model, field)                    // check fn for unique()
-prismaUniqueComposite(model, fields: string[]) // check fn for uniqueComposite()
+prismaUnique(model, field)                    // check fn for unique(); excludeWhere typed as model's WhereInput
+prismaUniqueComposite(model, fields: string[]) // check fn for uniqueComposite(); same typing
 ```
 
 `handlePrismaError` takes **no options object**. A per-constraint message map was considered and
