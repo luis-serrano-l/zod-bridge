@@ -31,86 +31,45 @@ unique(z.email(), prismaUnique(prisma.user, "email"), "Email already taken")
 
 ## Before and after
 
-Two handlers, each written twice. Schema: `User` (unique `email`), `Post` (`authorId` FK), `Like`
-(composite unique on `userId, postId`). Handlers return `{ status, body }` so no framework is assumed.
+Schema: `User` (unique `email`), `Post` (`authorId` FK), `Like` (composite unique on `userId, postId`).
 
 ### Update a user's email
 
 Without zod-bridge:
 
 ```ts
-import { z, ZodError } from "zod"
+const EmailSchema = z.email().refine(
+  async (email) => !(await prisma.user.findFirst({ where: { email, NOT: { id } } })),
+  "Email already taken",
+)
 
-// Which field failed depends on your Prisma version and whether you use a driver adapter:
-//   Prisma 7 + adapter ≤ 7.9   meta.driverAdapterError.cause.constraint.fields
-//   Prisma 7 + adapter 7.10+   meta.driverAdapterError.cause.constraint.index  ("User_email_key")
-//   Prisma ≤ 6, or no adapter  meta.target  (string | string[])
-function fieldsFromP2002(meta: any): string[] {
-  const cause = meta?.driverAdapterError?.cause
-  if (Array.isArray(cause?.constraint?.fields)) return cause.constraint.fields
-  if (typeof cause?.constraint?.index === "string") {
-    return cause.constraint.index
-      .replace(`${cause.table}_`, "")
-      .replace(/_key$/, "")
-      .split("_")
+try {
+  const email = await EmailSchema.parseAsync(input.email)
+  await prisma.user.update({ where: { id }, data: { email } })
+} catch (e: any) {
+  if (e?.code === "P2002") {
+    // Which field failed? Depends on the Prisma version:
+    //   meta.driverAdapterError.cause.constraint.fields   (7 + adapter, ≤ 7.9)
+    //   meta.driverAdapterError.cause.constraint.index    (7.10+, "User_email_key" — parse it)
+    //   meta.target                                       (≤ 6, string | string[])
   }
-  const target = meta?.target
-  return Array.isArray(target) ? target : typeof target === "string" ? [target] : []
-}
-
-async function updateEmail(id: number, input: { email: string }) {
-  const user = await prisma.user.findUnique({ where: { id } })
-  if (!user) return { status: 404, body: { error: "User not found" } }
-
-  const EmailSchema = z.email().refine(
-    async (email) =>
-      !(await prisma.user.findFirst({ where: { email, NOT: { id } } })), // don't flag our own row
-    "Email already taken",
-  )
-
-  try {
-    const email = await EmailSchema.parseAsync(input.email)
-    return { status: 200, body: await prisma.user.update({ where: { id }, data: { email } }) }
-  } catch (e: any) {
-    if (e instanceof ZodError) return { status: 400, body: e.issues }
-    if (e?.code === "P2002") return { status: 409, body: { taken: fieldsFromP2002(e.meta) } }
-    if (e?.code === "P2025") return { status: 404, body: { error: "User not found" } }
-    throw e
-  }
+  if (e?.code === "P2025") { /* not found */ }
 }
 ```
 
 With zod-bridge:
 
 ```ts
-import { z, ZodError } from "zod"
-import { unique } from "zod-bridge"
-import {
-  findOrThrow, handlePrismaError, prismaUnique,
-  PrismaNotFoundError, PrismaUniqueConstraintError,
-} from "zod-bridge/prisma"
+const EmailSchema = unique(z.email(), prismaUnique(prisma.user, "email"), {
+  message: "Email already taken",
+  excludeWhere: { id },
+})
 
-async function updateEmail(id: number, input: { email: string }) {
-  try {
-    await findOrThrow(() => prisma.user.findUnique({ where: { id } }))
-
-    const EmailSchema = unique(z.email(), prismaUnique(prisma.user, "email"), {
-      message: "Email already taken",
-      excludeWhere: { id },
-    })
-
-    const email = await EmailSchema.parseAsync(input.email)
-    return { status: 200, body: await prisma.user.update({ where: { id }, data: { email } }) }
-  } catch (e) {
-    if (e instanceof ZodError) return { status: 400, body: e.issues }
-    try {
-      handlePrismaError(e)
-    } catch (typed) {
-      if (typed instanceof PrismaNotFoundError) return { status: 404, body: { error: typed.message } }
-      if (typed instanceof PrismaUniqueConstraintError) return { status: 409, body: { taken: typed.fields } }
-      throw typed
-    }
-  }
+try {
+  const email = await EmailSchema.parseAsync(input.email)
+  await prisma.user.update({ where: { id }, data: { email } })
+} catch (e) {
+  handlePrismaError(e) // throws PrismaUniqueConstraintError { fields: ["email"] } or PrismaNotFoundError
 }
 ```
 
@@ -119,32 +78,18 @@ async function updateEmail(id: number, input: { email: string }) {
 Without zod-bridge:
 
 ```ts
-import { z, ZodError } from "zod"
+const LikeSchema = z.object({ userId: z.number(), postId: z.number() }).refine(
+  async ({ userId, postId }) => !(await prisma.like.findFirst({ where: { userId, postId } })),
+  "Already liked this post",
+)
 
-// Prisma ≤ 6 / no adapter: meta.field_name.  Prisma 7.10+ with adapter: only the index name
-// ("Post_authorId_fkey") ships, so the field has to be parsed out of it.
-function fieldFromP2003(meta: any): string {
-  if (typeof meta?.field_name === "string") return meta.field_name
-  const index: string = meta?.driverAdapterError?.cause?.constraint?.index ?? ""
-  return index.replace(/_fkey$/, "").split("_").slice(1).join("_")
-}
-
-const LikeSchema = z
-  .object({ userId: z.number(), postId: z.number() })
-  .refine(
-    async ({ userId, postId }) => !(await prisma.like.findFirst({ where: { userId, postId } })),
-    "Already liked this post",
-  )
-
-async function likePost(input: unknown) {
-  try {
-    const data = await LikeSchema.parseAsync(input)
-    return { status: 201, body: await prisma.like.create({ data }) }
-  } catch (e: any) {
-    if (e instanceof ZodError) return { status: 400, body: e.issues }
-    if (e?.code === "P2002") return { status: 409, body: { error: "Already liked this post" } }
-    if (e?.code === "P2003") return { status: 404, body: { missing: fieldFromP2003(e.meta) } }
-    throw e
+try {
+  await prisma.like.create({ data: await LikeSchema.parseAsync(input) })
+} catch (e: any) {
+  if (e?.code === "P2002") { /* already liked */ }
+  if (e?.code === "P2003") {
+    // Which FK? meta.field_name on Prisma ≤ 6; on 7.10+ only the index name ships
+    // ("Post_authorId_fkey") — parse the field out of it.
   }
 }
 ```
@@ -152,41 +97,22 @@ async function likePost(input: unknown) {
 With zod-bridge:
 
 ```ts
-import { z, ZodError } from "zod"
-import { uniqueComposite } from "zod-bridge"
-import {
-  handlePrismaError, prismaUniqueComposite,
-  PrismaForeignKeyError, PrismaUniqueConstraintError,
-} from "zod-bridge/prisma"
-
 const LikeSchema = uniqueComposite(
   z.object({ userId: z.number(), postId: z.number() }),
   prismaUniqueComposite(prisma.like, ["userId", "postId"]),
   "Already liked this post",
 )
 
-async function likePost(input: unknown) {
-  try {
-    const data = await LikeSchema.parseAsync(input)
-    return { status: 201, body: await prisma.like.create({ data }) }
-  } catch (e) {
-    if (e instanceof ZodError) return { status: 400, body: e.issues }
-    try {
-      handlePrismaError(e)
-    } catch (typed) {
-      if (typed instanceof PrismaUniqueConstraintError) return { status: 409, body: { error: "Already liked this post" } }
-      if (typed instanceof PrismaForeignKeyError) return { status: 404, body: { missing: typed.fieldName } }
-      throw typed
-    }
-  }
+try {
+  await prisma.like.create({ data: await LikeSchema.parseAsync(input) })
+} catch (e) {
+  handlePrismaError(e) // throws PrismaUniqueConstraintError or PrismaForeignKeyError { fieldName: "postId" }
 }
 ```
 
-In both cases the Zod check is the instant form feedback and `handlePrismaError` is the safety net
-for the request that loses a race (see [Race conditions](#race-conditions)). The two "without"
-helpers are exactly what `zod-bridge/prisma` maintains for you, unit-tested against every Prisma
-5–7 error shape. A runnable version of every feature lives in
-[`examples/demo/main.ts`](examples/demo/main.ts).
+The version-specific parsing in the comments is what `zod-bridge/prisma` maintains for you, unit-tested
+against every Prisma 5–7 error shape. The Zod check is instant form feedback; `handlePrismaError` is the
+safety net for the request that loses a race (see [Race conditions](#race-conditions)).
 
 ## Demo
 
