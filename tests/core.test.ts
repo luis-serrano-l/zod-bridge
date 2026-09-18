@@ -46,4 +46,18 @@ describe("core", () => {
       issues: [{ message: "Already liked this post" }],
     })
   })
+
+  it("unique() reports the issue at the check fn's path hint", async () => {
+    const check = Object.assign(
+      vi.fn(async (_val: { id?: number; email: string }) => false),
+      { path: ["email"] },
+    )
+    const schema = unique(z.object({ id: z.number().optional(), email: z.string() }), check, "Taken")
+
+    const result = await schema.safeParseAsync({ email: "a@b.c" })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues).toEqual([
+      expect.objectContaining({ code: "custom", message: "Taken", path: ["email"] }),
+    ])
+  })
 })

@@ -33,16 +33,22 @@ GitHub Actions, two workflows from day one:
 
 `.unique()` on update operations would find the record being edited and report "already taken" without this design.
 
-Decision: `unique()` wrapper accepts `excludeWhere` — a Prisma `where` fragment for the record to skip. Using a full `where` fragment (not a bare `excludeId`) handles composite PKs and non-`id` PK names:
+Decision: the exclusion is implicit. `prismaUnique` accepts the parsed object as well as the bare value; when the object carries the primary key (`id` by default, `{ primaryKey }` to override, arrays for composite keys), the check adds `NOT: { id }`. One schema serves create and update; the caller merges the route id into the body:
 
 ```ts
-unique(z.email(), prismaUnique(prisma.user, "email"), {
-  message: "Email taken",
-  excludeWhere: { id: user.id }
-})
+const UserSchema = unique(
+  z.object({ id: z.number().optional(), email: z.email() }),
+  prismaUnique(prisma.user, "email"),
+  "Email taken",
+)
+await UserSchema.parseAsync({ ...body, id: Number(params.id) })
 ```
 
-`prismaUnique` merges `excludeWhere` as `NOT`: `{ email: val, NOT: excludeWhere }`.
+Why it has to be in the parsed value: a Zod refinement only sees its own value, and Zod v4's `ParseContext` is closed (`error`, `reportInput`, `jitless`), so there is no parse-time channel for "the current record". A field-level `unique()` inside `z.object` therefore cannot see `id`; the object is wrapped instead, and the issue is reported at `path: [field]`.
+
+Why the key is a convention: Prisma 7 exposes no primary-key info at runtime. `Prisma.dmmf.datamodel` (and `client._runtimeDataModel`) carry only `name`/`kind`/`type` per field; the `.d.ts` declares `isId`/`primaryKey` but they are `undefined`. Phase 4's `createSchema` must read the schema at codegen time for this.
+
+`excludeWhere` stays as the explicit override: a full Prisma `where` fragment (not a bare `excludeId`) merged as `NOT`, typed as the model's `WhereInput`. Rejected alternatives: a `forUpdate(schema, excludeWhere)` helper that rebuilds the schema per request (works, but the user wanted no per-request ceremony), and an `AsyncLocalStorage` request context (invisible coupling between framework and schema).
 
 ## Composite unique constraints
 

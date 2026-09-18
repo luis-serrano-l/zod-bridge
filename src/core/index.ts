@@ -10,7 +10,15 @@ export type UniqueOptions<TExclude = unknown> = {
   readonly excludeWhere?: TExclude
 }
 
-type UniqueFn<T, TExclude> = (val: T, opts?: UniqueOptions<TExclude>) => Promise<boolean>
+/**
+ * A check fn may carry a `path` hint: where in the parsed value the issue
+ * belongs. Adapters set it when they validate a field of an object (e.g.
+ * `prismaUnique(prisma.user, "email")` reports at `["email"]`).
+ */
+export type UniqueFn<T, TExclude = unknown> = ((
+  val: T,
+  opts?: UniqueOptions<TExclude>,
+) => Promise<boolean>) & { readonly path?: readonly PropertyKey[] }
 
 export function unique<TSchema extends ZodTypeAny, TExclude = unknown>(
   schema: TSchema,
@@ -23,7 +31,7 @@ export function unique<TSchema extends ZodTypeAny, TExclude = unknown>(
 
   return schema.superRefine(async (val: TSchema["_output"], ctx) => {
     const isUnique = await check(val, excludeWhere === undefined ? {} : { excludeWhere })
-    if (!isUnique) ctx.addIssue(message)
+    if (!isUnique) ctx.addIssue({ code: "custom", message, path: [...(check.path ?? [])] })
   }) as TSchema
 }
 

@@ -9,6 +9,7 @@ import {
   PrismaUniqueConstraintError,
   findOrThrow,
   handlePrismaError,
+  prismaUnique,
 } from "../../src/adapters/prisma/index.js"
 
 let prisma: PrismaClient
@@ -89,6 +90,30 @@ describe("race condition — unique() + handlePrismaError safety net", () => {
     // Exactly one user row in the DB regardless of which path "won"
     const count = await prisma.user.count({ where: { email } })
     expect(count).toBe(1)
+  })
+})
+
+describe("prismaUnique — implicit self-exclusion on update", () => {
+  it("own record passes, another user's email fails, no id fails", async () => {
+    const alice = await prisma.user.create({ data: { email: "alice@test.com" } })
+    const bob = await prisma.user.create({ data: { email: "bob@test.com" } })
+
+    const UserSchema = unique(
+      z.object({ id: z.number().optional(), email: z.email() }),
+      prismaUnique(prisma.user, "email"),
+      "Email already taken",
+    )
+
+    await expect(UserSchema.parseAsync({ id: alice.id, email: alice.email })).resolves.toEqual({
+      id: alice.id,
+      email: alice.email,
+    })
+    await expect(UserSchema.parseAsync({ email: alice.email })).rejects.toMatchObject({
+      issues: [{ message: "Email already taken", path: ["email"] }],
+    })
+    await expect(UserSchema.parseAsync({ id: bob.id, email: alice.email })).rejects.toMatchObject({
+      issues: [{ path: ["email"] }],
+    })
   })
 })
 

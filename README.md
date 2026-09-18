@@ -38,13 +38,13 @@ Schema: `User` (unique `email`), `Post` (`authorId` FK), `Like` (composite uniqu
 Without zod-bridge:
 
 ```ts
-const EmailSchema = z.email().refine(
-  async (email) => !(await prisma.user.findFirst({ where: { email, NOT: { id } } })),
-  "Email already taken",
-)
+const UserSchema = z.object({ id: z.number(), email: z.email() }).superRefine(async (u, ctx) => {
+  if (await prisma.user.findFirst({ where: { email: u.email, NOT: { id: u.id } } }))
+    ctx.addIssue({ code: "custom", message: "Email already taken", path: ["email"] })
+})
 
 try {
-  const email = await EmailSchema.parseAsync(input.email)
+  const { id, email } = await UserSchema.parseAsync({ ...input, id })
   await prisma.user.update({ where: { id }, data: { email } })
 } catch (e: any) {
   if (e?.code === "P2002") {
@@ -60,13 +60,14 @@ try {
 With zod-bridge:
 
 ```ts
-const EmailSchema = unique(z.email(), prismaUnique(prisma.user, "email"), {
-  message: "Email already taken",
-  excludeWhere: { id },
-})
+const UserSchema = unique(
+  z.object({ id: z.number().optional(), email: z.email() }),
+  prismaUnique(prisma.user, "email"),
+  "Email already taken",
+)
 
 try {
-  const email = await EmailSchema.parseAsync(input.email)
+  const { id, email } = await UserSchema.parseAsync({ ...input, id }) // id present → own row excluded
   await prisma.user.update({ where: { id }, data: { email } })
 } catch (e) {
   handlePrismaError(e) // throws PrismaUniqueConstraintError { fields: ["email"] } or PrismaNotFoundError
@@ -240,17 +241,36 @@ const EmailSchema = unique(
 const result = await EmailSchema.safeParseAsync(input.email)
 ```
 
-### Excluding the current record on update
+### Updating a record: its own value is not a conflict
+
+Validate the object instead of the bare field. When the parsed value carries the primary key,
+`prismaUnique` excludes that record from the check (`NOT: { id }`) automatically:
 
 ```ts
-const EmailSchema = unique(
-  z.email(),
+const UserSchema = unique(
+  z.object({ id: z.number().optional(), email: z.email() }),
   prismaUnique(prisma.user, "email"),
-  { message: "Email already taken", excludeWhere: { id: currentUser.id } },
+  "Email already taken",
 )
+
+await UserSchema.parseAsync(req.body)                                   // create: plain check
+await UserSchema.parseAsync({ ...req.body, id: Number(req.params.id) }) // update: NOT: { id }
 ```
 
-`prismaUnique` adds `NOT: { id: currentUser.id }` to the Prisma query, so editing a user's own email doesn't report "already taken". `excludeWhere` accepts a full Prisma `where` fragment — handles composite PKs and non-`id` primary key names. It is typed as the model's `WhereInput`, inferred from the model you pass to `prismaUnique`, so unknown fields are a type error and your editor autocompletes it.
+The issue is reported at `path: ["email"]`. The same schema serves create and update, so there
+is nothing to rebuild per request.
+
+Details:
+
+- Take the id from the route or session and merge it in, as above. A body-supplied id is under
+  the client's control; if a caller games it, the insert still fails and `handlePrismaError`
+  reports it (see [Race conditions](#race-conditions)).
+- The key defaults to `id`. Pass `{ primaryKey: "uuid" }` or `{ primaryKey: ["tenantId", "slug"] }`
+  for other names or composite keys. Exclusion applies only when every key field is present.
+- Wrap the object, not the field. A `unique()` on `email` inside `z.object({ id, email })` cannot
+  see `id`, because a Zod refinement only sees its own value.
+- Explicit escape hatch: `unique(schema, check, { excludeWhere: { ... } })` takes a full Prisma
+  `where` fragment and overrides the implicit exclusion. It is typed as the model's `WhereInput`.
 
 ### Composite unique constraints
 
@@ -300,7 +320,7 @@ If an AI coding agent writes your Prisma + Zod code, `zod-bridge` pays off twice
 
 **Less code to generate.** Without it, every call site needs the same hand-written boilerplate: check `e.code === "P2002"`, parse `meta.target`, fall back to `meta.constraint.index` on Prisma 7.10+ (which no longer ships a field list), and hand-roll an async `.refine()` with a `findFirst` plus an exclusion clause for updates. With it, that collapses to `instanceof PrismaUniqueConstraintError` and one `unique()` call.
 
-**Fewer wrong-first-try generations.** Agents burn most of their tokens on retry loops, not on the initial write. Prisma's error shape has gotchas an agent won't know about a given project — driver-adapter errors carrying only the index name, composite primary keys, non-`id` PK names on update. Each one is a failing test, a re-read, and a rewrite. `handlePrismaError`, `prismaUnique`, and `excludeWhere` encode that knowledge once, so the agent gets it right on the first pass.
+**Fewer wrong-first-try generations.** Agents burn most of their tokens on retry loops, not on the initial write. Prisma's error shape has gotchas an agent won't know about a given project — driver-adapter errors carrying only the index name, composite primary keys, excluding the record being edited on update. Each one is a failing test, a re-read, and a rewrite. `handlePrismaError` and `prismaUnique` encode that knowledge once, so the agent gets it right on the first pass.
 
 Two things an agent should be told at the call site:
 

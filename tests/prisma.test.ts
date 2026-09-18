@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import {
   PrismaForeignKeyError,
   PrismaNotFoundError,
@@ -7,6 +7,8 @@ import {
   PrismaUniqueConstraintError,
   findOrThrow,
   handlePrismaError,
+  prismaUnique,
+  prismaUniqueComposite,
 } from "../src/adapters/prisma/index.js"
 
 function knownError(code: string, meta?: Record<string, unknown>) {
@@ -109,5 +111,89 @@ describe("prisma adapter", () => {
 
   it("findOrThrow throws on null result", async () => {
     await expect(findOrThrow(() => Promise.resolve(null))).rejects.toThrow(PrismaNotFoundError)
+  })
+})
+
+function mockModel(existing: unknown = null) {
+  return { findFirst: vi.fn(async (_args?: { where?: unknown }) => existing) }
+}
+
+describe("prismaUnique", () => {
+  it("scalar mode: queries the field, reports at the root", async () => {
+    const user = mockModel()
+    const check = prismaUnique(user, "email")
+    await expect(check("a@b.c")).resolves.toBe(true)
+    expect(user.findFirst).toHaveBeenCalledWith({ where: { email: "a@b.c" } })
+    expect(check.path).toEqual(["email"])
+  })
+
+  it("scalar mode: returns false when a row exists", async () => {
+    const check = prismaUnique(mockModel({ id: 1 }), "email")
+    await expect(check("a@b.c")).resolves.toBe(false)
+  })
+
+  it("object mode without primary key: plain check", async () => {
+    const user = mockModel()
+    await prismaUnique(user, "email")({ email: "a@b.c" })
+    expect(user.findFirst).toHaveBeenCalledWith({ where: { email: "a@b.c" } })
+  })
+
+  it("object mode with id: excludes that record", async () => {
+    const user = mockModel()
+    await prismaUnique(user, "email")({ id: 7, email: "a@b.c" })
+    expect(user.findFirst).toHaveBeenCalledWith({
+      where: { email: "a@b.c", NOT: { id: 7 } },
+    })
+  })
+
+  it("object mode: custom primaryKey", async () => {
+    const user = mockModel()
+    await prismaUnique(user, "email", { primaryKey: "uuid" })({ uuid: "x", id: 1, email: "a@b.c" })
+    expect(user.findFirst).toHaveBeenCalledWith({
+      where: { email: "a@b.c", NOT: { uuid: "x" } },
+    })
+  })
+
+  it("object mode: composite primaryKey needs every field", async () => {
+    const user = mockModel()
+    const check = prismaUnique(user, "email", { primaryKey: ["tenantId", "slug"] })
+
+    await check({ tenantId: 1, slug: "s", email: "a@b.c" })
+    expect(user.findFirst).toHaveBeenLastCalledWith({
+      where: { email: "a@b.c", NOT: { tenantId: 1, slug: "s" } },
+    })
+
+    await check({ tenantId: 1, email: "a@b.c" })
+    expect(user.findFirst).toHaveBeenLastCalledWith({ where: { email: "a@b.c" } })
+  })
+
+  it("object mode: explicit excludeWhere wins over the implicit one", async () => {
+    const user = mockModel()
+    await prismaUnique(user, "email")({ id: 7, email: "a@b.c" }, { excludeWhere: { id: 9 } })
+    expect(user.findFirst).toHaveBeenCalledWith({
+      where: { email: "a@b.c", NOT: { id: 9 } },
+    })
+  })
+
+  it("object mode: skips the query when the field is absent", async () => {
+    const user = mockModel({ id: 1 })
+    await expect(prismaUnique(user, "email")({ id: 7 })).resolves.toBe(true)
+    expect(user.findFirst).not.toHaveBeenCalled()
+  })
+})
+
+describe("prismaUniqueComposite", () => {
+  it("queries all fields, excludes by primary key when present", async () => {
+    const like = mockModel()
+    const check = prismaUniqueComposite(like, ["userId", "postId"])
+
+    await check({ userId: 1, postId: 2 })
+    expect(like.findFirst).toHaveBeenLastCalledWith({ where: { userId: 1, postId: 2 } })
+
+    await check({ id: 5, userId: 1, postId: 2 })
+    expect(like.findFirst).toHaveBeenLastCalledWith({
+      where: { userId: 1, postId: 2, NOT: { id: 5 } },
+    })
+    expect(check.path).toBeUndefined()
   })
 })

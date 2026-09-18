@@ -82,8 +82,10 @@ class PrismaForeignKeyError         { code: "P2003"; fieldName: string }
 class PrismaRelationViolationError  { code: "P2014"; relationName: string }
 handlePrismaError(err): never       // rethrows typed, or rethrows the original untouched
 findOrThrow(() => Promise<T | null>): Promise<T>
-prismaUnique(model, field)                    // check fn for unique(); excludeWhere typed as model's WhereInput
-prismaUniqueComposite(model, fields: string[]) // check fn for uniqueComposite(); same typing
+prismaUnique(model, field, { primaryKey? })            // check fn for unique(); scalar or object value
+prismaUniqueComposite(model, fields, { primaryKey? })   // check fn for uniqueComposite()
+// Object value + primaryKey fields present (default "id") → that record is excluded (NOT) automatically.
+// prismaUnique reports at path [field] in object form. excludeWhere (typed as WhereInput) overrides.
 ```
 
 `handlePrismaError` takes **no options object**. A per-constraint message map was considered and
@@ -96,8 +98,14 @@ dropped (see DECISIONS.md); Phase 4's `createSchema` is where that translation b
 - **The Zod check is best-effort; `handlePrismaError` is the safety net.** Two concurrent requests
   can both pass the refine and one fails at insert. Always show them together in examples. This is
   a documented feature, not a gap to "fix".
-- **`excludeWhere`, never `excludeId`.** It's a Prisma `where` fragment merged as `NOT`, so
-  composite PKs and non-`id` PK names work on update.
+- **Update exclusion is implicit and comes from the parsed value.** Validate the object
+  (`unique(z.object({ id, email }), prismaUnique(prisma.user, "email"))`) and merge the route id
+  in before parsing. A `unique()` on the field inside `z.object` cannot see `id`: Zod refinements
+  only see their own value, and Zod v4 has no parse-time context. `excludeWhere` (a Prisma `where`
+  fragment merged as `NOT`) is the explicit override, never an `excludeId`.
+- **Prisma exposes no primary-key info at runtime.** `Prisma.dmmf.datamodel` fields carry only
+  `name`/`kind`/`type` in Prisma 7; the `.d.ts` declares `isId`/`primaryKey` but they are
+  `undefined`. That is why `primaryKey` is a convention (`"id"`) with an option, not derived.
 - **Composite fields are arrays** (`["userId", "postId"]`), never comma-joined strings.
 - **Error field extraction is version-dependent** (`errors.ts`). Order of fallbacks, keep it:
   1. `meta.driverAdapterError.cause.constraint.fields` — Prisma 7 + driver adapter, ≤ 7.9
@@ -167,5 +175,6 @@ Phase 2 (Prisma issue/PR outreach) is deferred until 0.1.0 is published. `ROADMA
 table lags reality; trust this line and the code.
 
 Phase 4 plan: `createSchema(prisma.user, overrides)` in `zod-bridge/prisma`, deriving the base
-shape from `Prisma.dmmf.datamodel`, merging Zod overrides, auto-wiring `excludeWhere` on update.
-The hard part is that Prisma exposes no field types at runtime; a codegen step is the fallback.
+shape from the Prisma schema, merging Zod overrides, wiring `primaryKey` for update exclusion.
+Prisma exposes neither field types nor primary keys at runtime (see the rule above), so this needs
+a codegen step; `Prisma.dmmf` is not a viable source.

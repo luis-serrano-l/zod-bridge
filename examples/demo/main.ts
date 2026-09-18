@@ -72,14 +72,17 @@ async function main(): Promise<void> {
   ok(`"bob@example.com" → ${free.success ? "valid" : "invalid"}`)
 
   // 3 ---------------------------------------------------------------------------
-  section("excludeWhere: editing your own record is not a conflict")
-  const OwnEmail = unique(z.email(), prismaUnique(prisma.user, "email"), {
-    message: "Email already taken",
-    excludeWhere: { id: alice.id },
-  })
-  code(`unique(..., { excludeWhere: { id: ${alice.id} } })`)
-  const own = await OwnEmail.safeParseAsync("alice@example.com")
-  ok(`"alice@example.com" for user #${alice.id} → ${own.success ? "valid" : "invalid"}`)
+  section("Update: editing your own record is not a conflict")
+  const UserSchema = unique(
+    z.object({ id: z.number().optional(), email: z.email() }),
+    prismaUnique(prisma.user, "email"),
+    "Email already taken",
+  )
+  code(`unique(z.object({ id, email }), prismaUnique(prisma.user, "email"))`)
+  const own = await UserSchema.safeParseAsync({ id: alice.id, email: "alice@example.com" })
+  ok(`{ id: ${alice.id}, email: "alice@example.com" } → ${own.success ? "valid (own row excluded)" : "invalid"}`)
+  const other = await UserSchema.safeParseAsync({ id: alice.id + 1, email: "alice@example.com" })
+  caught(`{ id: ${alice.id + 1}, email: "alice@example.com" } → ${yellow(other.error?.issues[0]?.message ?? "")} at ${JSON.stringify(other.error?.issues[0]?.path)}`)
 
   // 4 ---------------------------------------------------------------------------
   section("uniqueComposite(): multi-column unique constraints")
