@@ -267,6 +267,9 @@ Details:
   reports it (see [Race conditions](#race-conditions)).
 - The key defaults to `id`. Pass `{ primaryKey: "uuid" }` or `{ primaryKey: ["tenantId", "slug"] }`
   for other names or composite keys. Exclusion applies only when every key field is present.
+  Why an option and not detection: Prisma exposes no primary-key info at runtime. The generated
+  `Prisma.dmmf` carries only field names and types (its `.d.ts` declares `isId`, but it is
+  `undefined`), and the `WhereUniqueInput` type lists `@id` and `@unique` fields identically.
 - Wrap the object, not the field. A `unique()` on `email` inside `z.object({ id, email })` cannot
   see `id`, because a Zod refinement only sees its own value.
 - Explicit escape hatch: `unique(schema, check, { excludeWhere: { ... } })` takes a full Prisma
