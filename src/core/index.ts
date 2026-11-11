@@ -30,8 +30,16 @@ export function unique<TSchema extends ZodTypeAny, TExclude = unknown>(
   const excludeWhere = typeof options === "object" ? options.excludeWhere : undefined
 
   return schema.superRefine(async (val: TSchema["_output"], ctx) => {
+    // Don't hit the DB for a value that already failed validation. With a path
+    // hint only issues at or under that path count; without one, any issue does.
+    const path = check.path ?? []
+    const alreadyInvalid = ctx.issues.some((issue) =>
+      path.every((key, i) => issue.path?.[i] === key),
+    )
+    if (alreadyInvalid) return
+
     const isUnique = await check(val, excludeWhere === undefined ? {} : { excludeWhere })
-    if (!isUnique) ctx.addIssue({ code: "custom", message, path: [...(check.path ?? [])] })
+    if (!isUnique) ctx.addIssue({ code: "custom", message, path: [...path] })
   }) as TSchema
 }
 

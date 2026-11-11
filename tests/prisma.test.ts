@@ -28,6 +28,19 @@ describe("prisma adapter", () => {
     expect(err.fields).toEqual(["email"])
   })
 
+  it("typed errors keep the original Prisma error as cause", () => {
+    const original = knownError("P2002", { target: ["email"] })
+    try {
+      handlePrismaError(original)
+    } catch (err) {
+      expect(err).toBeInstanceOf(PrismaUniqueConstraintError)
+      expect((err as Error).cause).toBe(original)
+    }
+    expect(new PrismaNotFoundError(knownError("P2025")).cause).toBeInstanceOf(Error)
+    expect(new PrismaForeignKeyError(knownError("P2003")).cause).toBeInstanceOf(Error)
+    expect(new PrismaRelationViolationError(knownError("P2014")).cause).toBeInstanceOf(Error)
+  })
+
   it("PrismaUniqueConstraintError reads driver-adapter constraint.fields (Prisma 7 ≤7.9)", () => {
     const err = new PrismaUniqueConstraintError(
       knownError("P2002", {
@@ -195,5 +208,13 @@ describe("prismaUniqueComposite", () => {
       where: { userId: 1, postId: 2, NOT: { id: 5 } },
     })
     expect(check.path).toBeUndefined()
+  })
+
+  it("skips the query when a field is absent", async () => {
+    const like = mockModel({ id: 9 })
+    const check = prismaUniqueComposite(like, ["userId", "postId"])
+
+    await expect(check({ userId: 1 })).resolves.toBe(true)
+    expect(like.findFirst).not.toHaveBeenCalled()
   })
 })

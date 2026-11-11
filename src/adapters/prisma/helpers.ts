@@ -111,6 +111,8 @@ export function prismaUniqueComposite<M extends FindFirstModel>(
 ): UniqueFn<Record<string, unknown>, WhereOf<M>> {
   const primaryKey = options.primaryKey ?? "id"
   return async (val, opts) => {
+    // An absent field would drop out of `where` and match unrelated rows.
+    if (fields.some((f) => val[f] === undefined)) return true
     const fieldWhere = Object.fromEntries(fields.map((f) => [f, val[f]]))
     const exclude = opts?.excludeWhere ?? implicitExclude(val, primaryKey)
     const where = exclude ? { ...fieldWhere, NOT: exclude } : fieldWhere

@@ -60,4 +60,28 @@ describe("core", () => {
       expect.objectContaining({ code: "custom", message: "Taken", path: ["email"] }),
     ])
   })
+
+  it("unique() skips the check when the value already failed validation", async () => {
+    const check = vi.fn(async () => true)
+
+    const result = await unique(z.email(), check).safeParseAsync("not-an-email")
+    expect(result.success).toBe(false)
+    expect(check).not.toHaveBeenCalled()
+  })
+
+  it("unique() with a path hint skips only when that field is invalid", async () => {
+    const check = Object.assign(
+      vi.fn(async (_val: { name: string; email: string }) => false),
+      { path: ["email"] },
+    )
+    const schema = unique(z.object({ name: z.string().min(3), email: z.email() }), check, "Taken")
+
+    await schema.safeParseAsync({ name: "abc", email: "bad" })
+    expect(check).not.toHaveBeenCalled()
+
+    // An unrelated field failing still reports the conflict in the same pass.
+    const result = await schema.safeParseAsync({ name: "a", email: "a@b.co" })
+    expect(check).toHaveBeenCalledTimes(1)
+    expect(result.error?.issues.map((i) => i.path)).toEqual([["name"], ["email"]])
+  })
 })

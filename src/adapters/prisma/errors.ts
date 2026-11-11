@@ -6,7 +6,7 @@ export class PrismaUniqueConstraintError extends Error {
 
   constructor(original: Prisma.PrismaClientKnownRequestError) {
     const fields = extractUniqueFields(original.meta)
-    super(`Unique constraint failed on: ${fields.join(", ")}`)
+    super(`Unique constraint failed on: ${fields.join(", ")}`, { cause: original })
     this.name = "PrismaUniqueConstraintError"
     this.fields = fields
   }
@@ -57,7 +57,7 @@ export class PrismaNotFoundError extends Error {
 
   constructor(original: Prisma.PrismaClientKnownRequestError) {
     const cause = original.meta?.["cause"]
-    super(typeof cause === "string" ? cause : "Record not found")
+    super(typeof cause === "string" ? cause : "Record not found", { cause: original })
     this.name = "PrismaNotFoundError"
   }
 }
@@ -68,7 +68,7 @@ export class PrismaForeignKeyError extends Error {
 
   constructor(original: Prisma.PrismaClientKnownRequestError) {
     const name = extractForeignKeyField(original.meta)
-    super(`Foreign key constraint failed on: ${name}`)
+    super(`Foreign key constraint failed on: ${name}`, { cause: original })
     this.name = "PrismaForeignKeyError"
     this.fieldName = name
   }
@@ -96,7 +96,7 @@ export class PrismaRelationViolationError extends Error {
   constructor(original: Prisma.PrismaClientKnownRequestError) {
     const rel = original.meta?.["relation_name"]
     const name = typeof rel === "string" ? rel : ""
-    super(`Relation violation: ${name}`)
+    super(`Relation violation: ${name}`, { cause: original })
     this.name = "PrismaRelationViolationError"
     this.relationName = name
   }

@@ -86,6 +86,9 @@ prismaUnique(model, field, { primaryKey? })            // check fn for unique();
 prismaUniqueComposite(model, fields, { primaryKey? })   // check fn for uniqueComposite()
 // Object value + primaryKey fields present (default "id") → that record is excluded (NOT) automatically.
 // prismaUnique reports at path [field] in object form. excludeWhere (typed as WhereInput) overrides.
+// Every typed error keeps the original PrismaClientKnownRequestError as `cause`.
+// unique() skips the check fn when the value already has an issue at/under the check's path
+// (any issue when there is no path hint). Prisma checks return true when a checked field is absent.
 ```
 
 `handlePrismaError` takes **no options object**. A per-constraint message map was considered and
