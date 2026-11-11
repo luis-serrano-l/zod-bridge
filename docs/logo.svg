@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 240" width="480" height="240" role="img" aria-labelledby="logo-title logo-desc">
+  <title id="logo-title">zod-bridge logo</title>
+  <desc id="logo-desc">A humpback stone bridge with a large pointed central arch, two smaller side arches and a cross hanging from the central arch, inspired by the bridge of Cangas de Onís.</desc>
+  <style>
+    .stone { fill: #2d3142; }
+    .water { stroke: #3068b7; }
+    .cross { fill: #d99a1c; stroke: #d99a1c; }
+    @media (prefers-color-scheme: dark) {
+      .stone { fill: #e8e6e1; }
+      .water { stroke: #6a95d8; }
+      .cross { fill: #f0b541; stroke: #f0b541; }
+    }
+  </style>
+
+  <!-- bridge: humpback deck with three arches cut out -->
+  <path class="stone" fill-rule="evenodd" d="
+    M16,172 L200,72 Q240,52 280,72 L464,172 L464,200 L16,200 Z
+    M150,200 L150,170 Q150,110 240,92 Q330,110 330,170 L330,200 Z
+    M62,200 L62,186 Q62,160 90,154 Q118,160 118,186 L118,200 Z
+    M358,200 L358,186 Q358,162 392,156 Q426,162 426,186 L426,200 Z"/>
+
+  <!-- cross hanging from the central arch -->
+  <g class="cross">
+    <line x1="240" y1="92" x2="240" y2="106" stroke-width="2"/>
+    <polygon stroke="none" points="237,126 234,106 246,106 243,126"/>
+    <polygon stroke="none" points="237,126 233,164 247,164 243,126"/>
+    <polygon stroke="none" points="240,123 218,120 218,132 240,129"/>
+    <polygon stroke="none" points="240,123 262,120 262,132 240,129"/>
+    <circle stroke="none" cx="240" cy="126" r="6"/>
+  </g>
+
+  <!-- river -->
+  <path class="water" fill="none" stroke-width="5" stroke-linecap="round" d="M40,220 q20,-10 40,0 t40,0 t40,0 t40,0 t40,0 t40,0 t40,0 t40,0 t40,0 t40,0"/>
+</svg>

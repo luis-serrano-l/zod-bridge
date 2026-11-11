@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.svg" alt="zod-bridge logo: a humpback stone bridge with a cross hanging from its central arch" width="320">
+</p>
+
 # zod-bridge
 
 **The async validation layer Zod lacks.** Typed Prisma errors and DB-aware uniqueness validators for Zod v4.
