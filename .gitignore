@@ -3,5 +3,8 @@ dist/
 *.db
 *.db-journal
 .env
-.claude/
+.claude/*
+!.claude/skills/
+!.claude/agents/
+.claude/skills/typescript-style/
 .code-review-graph/

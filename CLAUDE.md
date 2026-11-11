@@ -54,7 +54,9 @@ tests/
   integration/setup.ts                # vitest globalSetup: starts container, runs db push
 prisma/schema.prisma, prisma.config.ts  # test schema: User (unique email), Post (FK), Like (composite unique)
 examples/demo/                # dockerized consumer app; installs the lib from a packed tarball
-.github/workflows/            # test.yml, publish.yml
+.github/workflows/            # test.yml, compat.yml, publish.yml
+.claude/skills/               # release-check (pre-publish gates), prisma-error-shape (new meta shape workflow)
+.claude/agents/               # prisma-compat-checker (test against a Prisma version in a temp copy)
 ```
 
 Package exports (tsup entries must match `package.json` `exports`):
