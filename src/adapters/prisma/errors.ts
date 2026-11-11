@@ -76,15 +76,20 @@ export class PrismaForeignKeyError extends Error {
 
 // Prisma ≤6 and Prisma 7 without adapter: meta.field_name
 // Prisma 7 with driver adapter (7.10+): meta.driverAdapterError.cause.constraint.index,
-// named `<Table>_<field>_fkey` by Prisma.
+// named `<Table>_<field>_fkey` by Prisma. The table prefix is stripped using cause.table
+// when it ships; otherwise up to the first underscore (wrong for a table containing `_`).
 function extractForeignKeyField(meta: Record<string, unknown> | undefined): string {
   const fieldName = meta?.["field_name"]
   if (typeof fieldName === "string") return fieldName
 
-  const index = (meta?.["driverAdapterError"] as { cause?: DriverAdapterCause } | undefined)?.cause
-    ?.constraint?.index
+  const cause = (meta?.["driverAdapterError"] as { cause?: DriverAdapterCause } | undefined)?.cause
+  const index = cause?.constraint?.index
   if (typeof index !== "string" || !index.endsWith("_fkey")) return ""
   const withoutSuffix = index.slice(0, -"_fkey".length)
+  const table = typeof cause?.table === "string" ? unquote(cause.table) : undefined
+  if (table !== undefined && withoutSuffix.startsWith(`${table}_`)) {
+    return withoutSuffix.slice(table.length + 1)
+  }
   const firstUnderscore = withoutSuffix.indexOf("_")
   return firstUnderscore === -1 ? withoutSuffix : withoutSuffix.slice(firstUnderscore + 1)
 }

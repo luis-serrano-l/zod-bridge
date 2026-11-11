@@ -1,4 +1,4 @@
-import type { ZodTypeAny } from "zod"
+import type { ZodType } from "zod"
 
 /**
  * `TExclude` is the type of the `excludeWhere` fragment. Adapters narrow it
@@ -20,7 +20,7 @@ export type UniqueFn<T, TExclude = unknown> = ((
   opts?: UniqueOptions<TExclude>,
 ) => Promise<boolean>) & { readonly path?: readonly PropertyKey[] }
 
-export function unique<TSchema extends ZodTypeAny, TExclude = unknown>(
+export function unique<TSchema extends ZodType, TExclude = unknown>(
   schema: TSchema,
   check: UniqueFn<TSchema["_output"], TExclude>,
   options?: string | UniqueOptions<TExclude>,

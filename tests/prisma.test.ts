@@ -93,6 +93,17 @@ describe("prisma adapter", () => {
     expect(err.fieldName).toBe("authorId")
   })
 
+  it("PrismaForeignKeyError strips the table prefix using cause.table", () => {
+    const err = new PrismaForeignKeyError(
+      knownError("P2003", {
+        driverAdapterError: {
+          cause: { table: "User_Profile", constraint: { index: "User_Profile_authorId_fkey" } },
+        },
+      }),
+    )
+    expect(err.fieldName).toBe("authorId")
+  })
+
   it("PrismaRelationViolationError instanceof check", () => {
     const err = new PrismaRelationViolationError(knownError("P2014", { relation_name: "UserPost" }))
     expect(err).toBeInstanceOf(PrismaRelationViolationError)
