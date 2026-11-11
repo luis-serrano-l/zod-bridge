@@ -1,0 +1,22 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+    ignore:
+      # Pinned on purpose, see "Pinned versions and why" in CLAUDE.md
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+      - dependency-name: testcontainers
+        update-types: [version-update:semver-major]
+      - dependency-name: "@testcontainers/postgresql"
+        update-types: [version-update:semver-major]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

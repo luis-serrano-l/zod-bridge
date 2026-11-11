@@ -154,6 +154,12 @@ Prisma 7 specifics used here:
 - `test.yml` — on push to `main` and every PR. `unit` job: typecheck + unit tests + `npm run build` +
   `npm pack --dry-run` on Node 22 and 24.
   `integration` job: Node 22, Docker available on the runner.
+- `compat.yml` — weekly (Monday 06:00 UTC) and manual: installs the latest `prisma`,
+  `@prisma/client`, `@prisma/adapter-pg` and `zod` over the lockfile and runs typecheck + full tests.
+  A red run usually means a new error `meta` shape (see the `prisma-error-shape` skill).
+- `dependabot.yml` — weekly npm (dev deps grouped; majors of the pinned packages ignored) and
+  GitHub Actions updates. Actions are pinned to commit SHAs; `test.yml`/`compat.yml` run with
+  `contents: read` only.
 - `publish.yml` — on `v*` tag push: typecheck, full tests, build, `npm publish --provenance`.
   Needs `id-token: write` (present) and `NPM_TOKEN` secret.
 - **Every job runs `npx prisma generate` right after `npm ci`.** Prisma 7 dropped the postinstall

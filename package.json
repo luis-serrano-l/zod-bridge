@@ -57,18 +57,18 @@
     }
   },
   "devDependencies": {
-    "@prisma/adapter-pg": "^7.10.0",
-    "@prisma/client": "^7.10.0",
+    "@prisma/adapter-pg": "^7.10.1",
+    "@prisma/client": "^7.10.1",
     "@testcontainers/postgresql": "^11.14.0",
-    "@types/node": "^22.20.2",
+    "@types/node": "^22.20.5",
     "@types/pg": "^8.23.1",
-    "pg": "^8.23.0",
-    "prisma": "^7.10.0",
+    "pg": "^8.23.1",
+    "prisma": "^7.10.1",
     "testcontainers": "^11.14.0",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",
-    "vitest": "^5.0.1",
-    "zod": "^4.6.5"
+    "vitest": "^5.1.0",
+    "zod": "^4.6.7"
   },
   "sideEffects": false
 }
