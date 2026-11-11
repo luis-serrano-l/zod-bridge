@@ -25,6 +25,8 @@ jobs:
       - run: npx prisma generate
       - run: npm run typecheck
       - run: npm run test:unit
+      - run: npm run build
+      - run: npm pack --dry-run
 
   integration:
     runs-on: ubuntu-latest

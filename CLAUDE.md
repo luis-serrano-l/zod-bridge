@@ -151,7 +151,8 @@ Prisma 7 specifics used here:
 
 ## CI and release
 
-- `test.yml` — on push to `main` and every PR. `unit` job: typecheck + unit tests on Node 22 and 24.
+- `test.yml` — on push to `main` and every PR. `unit` job: typecheck + unit tests + `npm run build` +
+  `npm pack --dry-run` on Node 22 and 24.
   `integration` job: Node 22, Docker available on the runner.
 - `publish.yml` — on `v*` tag push: typecheck, full tests, build, `npm publish --provenance`.
   Needs `id-token: write` (present) and `NPM_TOKEN` secret.
