@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 544" width="1320" height="544" role="img" aria-labelledby="two-layers-title two-layers-desc">
+  <title id="two-layers-title">zod-bridge: two layers of uniqueness protection</title>
+  <desc id="two-layers-desc">A request first passes a Zod uniqueness check that reports a taken value as a form field error; the database write then acts as a safety net, and handlePrismaError turns a lost race into a typed PrismaUniqueConstraintError.</desc>
+  <defs>
+    <marker id="two-layers-arrow" markerWidth="12" markerHeight="10" refX="11" refY="5" orient="auto">
+      <polygon points="0 0, 12 5, 0 10" fill="#4f5d75"/>
+    </marker>
+    <style>
+      .name { font-family: Geist, "Helvetica Neue", Arial, sans-serif; font-size: 24px; font-weight: 600; fill: #2d3142; }
+      .mono { font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 22px; font-weight: 500; fill: #2d3142; }
+      .label { font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 22px; font-weight: 600; fill: #2d3142; letter-spacing: 0.04em; }
+      .tag { font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 18px; font-weight: 600; fill: #2d3142; letter-spacing: 0.18em; }
+      .aside { font-family: "Instrument Serif", Georgia, "Times New Roman", serif; font-size: 24px; font-style: italic; fill: #2d3142; }
+    </style>
+  </defs>
+
+  <rect width="1320" height="544" rx="8" fill="#f5f5f5"/>
+
+  <text x="40" y="52" class="tag">FAST FEEDBACK FIRST, SAFETY NET SECOND</text>
+
+  <!-- connectors (before boxes) -->
+  <g stroke="#4f5d75" stroke-width="2" fill="none">
+    <line x1="240" y1="152" x2="318" y2="152" marker-end="url(#two-layers-arrow)"/>
+    <line x1="620" y1="152" x2="698" y2="152" marker-end="url(#two-layers-arrow)"/>
+    <line x1="1000" y1="152" x2="1078" y2="152" marker-end="url(#two-layers-arrow)"/>
+    <line x1="470" y1="216" x2="470" y2="342" marker-end="url(#two-layers-arrow)"/>
+    <line x1="850" y1="216" x2="850" y2="342" marker-end="url(#two-layers-arrow)"/>
+  </g>
+
+  <!-- connector labels -->
+  <rect x="624" y="100" width="72" height="28" rx="2" fill="#f5f5f5"/>
+  <text x="660" y="122" class="label" text-anchor="middle">FREE</text>
+  <rect x="1016" y="100" width="48" height="28" rx="2" fill="#f5f5f5"/>
+  <text x="1040" y="122" class="label" text-anchor="middle">OK</text>
+  <rect x="480" y="264" width="88" height="28" rx="2" fill="#f5f5f5"/>
+  <text x="524" y="286" class="label" text-anchor="middle">TAKEN</text>
+  <rect x="860" y="264" width="256" height="28" rx="2" fill="#f5f5f5"/>
+  <text x="988" y="286" class="label" text-anchor="middle">handlePrismaError</text>
+
+  <!-- Request (start) -->
+  <rect x="40" y="104" width="200" height="96" rx="20" fill="#f5f5f5"/>
+  <rect x="40" y="104" width="200" height="96" rx="20" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="2"/>
+  <text x="140" y="146" class="name" text-anchor="middle">Request</text>
+  <text x="140" y="178" class="mono" text-anchor="middle">{ id, email }</text>
+
+  <!-- Layer 1: unique() (focal) -->
+  <rect x="320" y="88" width="300" height="128" rx="6" fill="#f5f5f5"/>
+  <rect x="320" y="88" width="300" height="128" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="2"/>
+  <rect x="332" y="100" width="116" height="28" rx="2" fill="none" stroke="#eb6c36" stroke-width="1.5"/>
+  <text x="390" y="120" class="tag" text-anchor="middle">LAYER 1</text>
+  <text x="470" y="164" class="name" text-anchor="middle">Zod uniqueness check</text>
+  <text x="470" y="196" class="mono" text-anchor="middle">unique() · parseAsync</text>
+
+  <!-- Layer 2: database write -->
+  <rect x="700" y="88" width="300" height="128" rx="6" fill="#f5f5f5"/>
+  <rect x="700" y="88" width="300" height="128" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="2"/>
+  <rect x="712" y="100" width="116" height="28" rx="2" fill="none" stroke="#2d3142" stroke-opacity="0.5" stroke-width="1.5"/>
+  <text x="770" y="120" class="tag" text-anchor="middle">LAYER 2</text>
+  <text x="850" y="164" class="name" text-anchor="middle">Database write</text>
+  <text x="850" y="196" class="mono" text-anchor="middle">prisma.user.update()</text>
+
+  <!-- Saved (end) -->
+  <rect x="1080" y="104" width="200" height="96" rx="20" fill="#f5f5f5"/>
+  <rect x="1080" y="104" width="200" height="96" rx="20" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="2"/>
+  <text x="1180" y="160" class="name" text-anchor="middle">Saved</text>
+
+  <!-- Form field error -->
+  <rect x="332" y="344" width="276" height="112" rx="6" fill="#f5f5f5"/>
+  <rect x="332" y="344" width="276" height="112" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="2"/>
+  <text x="470" y="392" class="name" text-anchor="middle">Form field error</text>
+  <text x="470" y="428" class="mono" text-anchor="middle">path: ["email"]</text>
+
+  <!-- Typed error (focal) -->
+  <rect x="640" y="344" width="420" height="112" rx="6" fill="#f5f5f5"/>
+  <rect x="640" y="344" width="420" height="112" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="2"/>
+  <text x="850" y="392" class="name" text-anchor="middle">PrismaUniqueConstraintError</text>
+  <text x="850" y="428" class="mono" text-anchor="middle">fields: ["email"]</text>
+
+  <text x="40" y="508" class="aside">Two requests can both pass layer 1. Layer 2 catches the one that loses the race.</text>
+</svg>

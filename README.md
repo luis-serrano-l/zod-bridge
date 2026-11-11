@@ -1,41 +1,70 @@
 # zod-bridge
 
-The missing async validation layer for Zod. Typed Prisma errors + DB-aware unique validators.
+**The async validation layer Zod lacks.** Typed Prisma errors and DB-aware uniqueness validators for Zod v4.
 
-## The problem
+[![Test](https://github.com/luis-serrano-l/zod-bridge/actions/workflows/test.yml/badge.svg)](https://github.com/luis-serrano-l/zod-bridge/actions/workflows/test.yml)
+![Zod v4](https://img.shields.io/badge/zod-v4-3068b7)
+![Prisma 5–7](https://img.shields.io/badge/prisma-5%E2%80%937-2d3748)
+![Node ≥ 22.12](https://img.shields.io/badge/node-%E2%89%A5%2022.12-3c873a)
+![License MIT](https://img.shields.io/badge/license-MIT-blue)
 
-Prisma throws untyped errors with magic string codes:
+| You write today | With zod-bridge |
+|---|---|
+| `if (e?.code === "P2002")` plus version-specific `meta` parsing | `e instanceof PrismaUniqueConstraintError`, then `e.fields` |
+| A hand-rolled async `.refine()` with `findFirst` at every call site | `unique(z.email(), prismaUnique(prisma.user, "email"))` |
+| An extra `NOT: { id }` clause so an update doesn't conflict with itself | Automatic when the parsed object carries the id |
+
+![Request flow: a Zod uniqueness check gives a form field error, the database write is the safety net, and handlePrismaError turns a lost race into a typed error](docs/two-layers.svg)
+
+## Contents
+
+- [Quick start](#quick-start)
+- [Before and after](#before-and-after)
+- [API at a glance](#api-at-a-glance)
+- [Uniqueness validators](#uniqueness-validators)
+- [Typed Prisma errors](#typed-prisma-errors)
+- [Race conditions](#race-conditions)
+- [Install details](#install-details)
+- [Demo](#demo)
+- [AI agents](#ai-agents)
+
+## Quick start
+
+```bash
+npm install zod-bridge
+```
 
 ```ts
-catch (e) {
-  if (e?.code === "P2002") { /* hope you spelled it right */ }
+import { z } from "zod"
+import { unique } from "zod-bridge"
+import { prismaUnique, handlePrismaError } from "zod-bridge/prisma"
+
+const UserSchema = unique(
+  z.object({ id: z.number().optional(), email: z.email() }),
+  prismaUnique(prisma.user, "email"),
+  "Email already taken",
+)
+
+try {
+  const data = await UserSchema.parseAsync(input) // layer 1: field error if taken
+  await prisma.user.create({ data })
+} catch (e) {
+  if (e instanceof z.ZodError) throw e
+  handlePrismaError(e) // layer 2: typed error if a concurrent request won
 }
 ```
 
-And Zod has no built-in way to check uniqueness against the database:
-
-```ts
-// Zod has no equivalent of this. You hand-roll an async refine at every call site:
-z.string().email().refine(
-  async (val) => !(await db.user.findFirst({ where: { email: val } })),
-  "Email already taken",
-)
-```
-
-`zod-bridge` fills both gaps. The uniqueness check is a wrapper, not a method, because Zod v4 has no
-plugin API and patching `ZodType.prototype` breaks with a second Zod copy:
-
-```ts
-unique(z.email(), prismaUnique(prisma.user, "email"), "Email already taken")
-```
+> [!IMPORTANT]
+> `unique()` is async. Use `parseAsync` / `safeParseAsync`; `.parse()` throws at runtime.
 
 ## Before and after
 
-Schema: `User` (unique `email`), `Post` (`authorId` FK), `Like` (composite unique on `userId, postId`).
+Example schema: `User` (unique `email`), `Post` (`authorId` FK), `Like` (composite unique on `userId, postId`).
 
 ### Update a user's email
 
-Without zod-bridge:
+<details>
+<summary>Without zod-bridge</summary>
 
 ```ts
 const UserSchema = z.object({ id: z.number(), email: z.email() }).superRefine(async (u, ctx) => {
@@ -57,6 +86,8 @@ try {
 }
 ```
 
+</details>
+
 With zod-bridge:
 
 ```ts
@@ -76,7 +107,8 @@ try {
 
 ### Like a post
 
-Without zod-bridge:
+<details>
+<summary>Without zod-bridge</summary>
 
 ```ts
 const LikeSchema = z.object({ userId: z.number(), postId: z.number() }).refine(
@@ -94,6 +126,8 @@ try {
   }
 }
 ```
+
+</details>
 
 With zod-bridge:
 
@@ -115,118 +149,31 @@ The version-specific parsing in the comments is what `zod-bridge/prisma` maintai
 against every Prisma 5–7 error shape. The Zod check is instant form feedback; `handlePrismaError` is the
 safety net for the request that loses a race (see [Race conditions](#race-conditions)).
 
-## Demo
+## API at a glance
 
-A dockerized example that installs `zod-bridge` from a freshly packed tarball and runs every feature against a real Postgres. Requires Docker only:
+| Import | Export | What it does |
+|---|---|---|
+| `zod-bridge` | `unique(schema, check, options?)` | Wraps a schema with an async uniqueness check |
+| `zod-bridge` | `uniqueComposite(schema, check, options?)` | Same, for multi-field constraints |
+| `zod-bridge/prisma` | `prismaUnique(model, field, { primaryKey? })` | Check fn for `unique()` |
+| `zod-bridge/prisma` | `prismaUniqueComposite(model, fields, { primaryKey? })` | Check fn for `uniqueComposite()` |
+| `zod-bridge/prisma` | `handlePrismaError(e)` | Rethrows a known Prisma error as a typed class, anything else untouched |
+| `zod-bridge/prisma` | `findOrThrow(() => query)` | Throws `PrismaNotFoundError` instead of returning `null` |
 
-```bash
-cd examples/demo
-docker compose up --build --abort-on-container-exit
-```
+| Prisma code | Class | Extra property |
+|---|---|---|
+| `P2002` unique | `PrismaUniqueConstraintError` | `fields: string[]` |
+| `P2025` not found | `PrismaNotFoundError` | |
+| `P2003` foreign key | `PrismaForeignKeyError` | `fieldName: string` |
+| `P2014` relation violation | `PrismaRelationViolationError` | `relationName: string` |
 
-![zod-bridge demo](docs/demo.gif)
+Every class has a literal `code` and keeps the original Prisma error as `cause`.
 
-Source: [`examples/demo/main.ts`](examples/demo/main.ts).
+## Uniqueness validators
 
-## Install
-
-```bash
-npm install zod-bridge
-```
-
-Peer dependencies: `zod ^4.0.0`, `@prisma/client ^5–7` (optional, only needed for the `/prisma` import). Requires Node ≥ 22.12.
-
-### Two entry points
-
-| Import | Contents | Depends on |
-|--------|----------|------------|
-| `zod-bridge` | `unique()`, `uniqueComposite()` — ORM-agnostic Zod validators | `zod` only |
-| `zod-bridge/prisma` | Typed error classes, `handlePrismaError`, `findOrThrow`, `prismaUnique*` | `zod` + `@prisma/client` |
-
-The root export is kept free of any database dependency on purpose. The Prisma adapter does a runtime `import { Prisma } from "@prisma/client"` (needed for the `instanceof` check in `handlePrismaError`), so re-exporting it from `zod-bridge` would make `@prisma/client` mandatory for everyone, including users who only want the Zod validators with a different ORM or a raw query.
-
-Prisma is currently the only adapter implemented. The core is written so that other ORMs (e.g. Drizzle) can be added as `zod-bridge/<adapter>` without touching the root export or the Prisma adapter.
-
-### Prisma 7 setup
-
-Prisma 7 requires a [driver adapter](https://www.prisma.io/docs/orm/overview/databases/database-drivers) instead of a connection URL in the schema. Install the pg adapter and pass it to `PrismaClient`:
-
-```bash
-npm install @prisma/adapter-pg pg
-```
-
-```ts
-import { PrismaPg } from "@prisma/adapter-pg"
-import { PrismaClient } from "@prisma/client"
-
-const prisma = new PrismaClient({
-  adapter: new PrismaPg(process.env.DATABASE_URL),
-})
-```
-
-Prisma 5/6 users: no changes needed — `new PrismaClient()` works as before.
-
-## Typed Prisma errors
-
-```ts
-import {
-  PrismaUniqueConstraintError,
-  PrismaNotFoundError,
-  PrismaForeignKeyError,
-  PrismaRelationViolationError,
-  handlePrismaError,
-  findOrThrow,
-} from "zod-bridge/prisma"
-```
-
-### `instanceof` checks instead of magic string codes
-
-```ts
-try {
-  await prisma.user.create({ data: { email } })
-} catch (e) {
-  if (e instanceof PrismaUniqueConstraintError) {
-    console.log(e.fields) // ["email"]
-  }
-  if (e instanceof PrismaNotFoundError) { ... }
-  if (e instanceof PrismaForeignKeyError) {
-    console.log(e.fieldName) // "authorId"
-  }
-  if (e instanceof PrismaRelationViolationError) {
-    console.log(e.relationName) // "UserPost"
-  }
-}
-```
-
-Covered error codes: `P2002` (unique), `P2025` (not found), `P2003` (foreign key), `P2014` (relation violation).
-
-### `handlePrismaError` — rethrow as typed error
-
-```ts
-try {
-  await prisma.user.create({ data: { email } })
-} catch (e) {
-  handlePrismaError(e) // throws PrismaUniqueConstraintError, PrismaNotFoundError, etc.
-                       // rethrows unknown errors as-is
-}
-```
-
-### `findOrThrow` — null-safe fetch
-
-```ts
-// Throws PrismaNotFoundError instead of returning null
-const user = await findOrThrow(() => prisma.user.findUnique({ where: { id } }))
-```
-
-## Async uniqueness validators for Zod
-
-```ts
-import { unique, uniqueComposite } from "zod-bridge"
-import { prismaUnique, prismaUniqueComposite } from "zod-bridge/prisma"
-```
-
-> **Important:** `unique()` and `uniqueComposite()` use `.superRefine()` internally, which is async.
-> You must use `parseAsync` / `safeParseAsync` — calling `.parse()` will throw at runtime.
+The check is a wrapper, not a method, because Zod v4 has no plugin API and patching
+`ZodType.prototype` breaks with a second Zod copy. It does not query the database for a value that
+already failed validation (an invalid email is never looked up).
 
 ### Single-field unique
 
@@ -237,7 +184,6 @@ const EmailSchema = unique(
   "Email already taken",
 )
 
-// Must use parseAsync
 const result = await EmailSchema.safeParseAsync(input.email)
 ```
 
@@ -260,7 +206,8 @@ await UserSchema.parseAsync({ ...req.body, id: Number(req.params.id) }) // updat
 The issue is reported at `path: ["email"]`. The same schema serves create and update, so there
 is nothing to rebuild per request.
 
-Details:
+<details>
+<summary>Details: where the id comes from, other primary keys, <code>excludeWhere</code></summary>
 
 - Take the id from the route or session and merge it in, as above. A body-supplied id is under
   the client's control; if a caller games it, the insert still fails and `handlePrismaError`
@@ -275,6 +222,8 @@ Details:
 - Explicit escape hatch: `unique(schema, check, { excludeWhere: { ... } })` takes a full Prisma
   `where` fragment and overrides the implicit exclusion. It is typed as the model's `WhereInput`.
 
+</details>
+
 ### Composite unique constraints
 
 ```ts
@@ -286,6 +235,8 @@ const LikeSchema = uniqueComposite(
 
 const result = await LikeSchema.safeParseAsync({ userId, postId })
 ```
+
+If any of the listed fields is absent from the parsed value, the check is skipped.
 
 ### Generic check function (without Prisma)
 
@@ -299,25 +250,88 @@ const EmailSchema = unique(
 )
 ```
 
-## Race conditions
-
-The async check + DB insert is two operations with a gap between them. Two concurrent requests can both pass the Zod check, then one fails at the DB level.
-
-This is by design. `handlePrismaError` is the safety net — it catches the P2002 that slips through. The Zod check is best-effort UX (instant field error in your form); `handlePrismaError` ensures correctness at the DB layer. Use both together:
+## Typed Prisma errors
 
 ```ts
-const schema = unique(z.email(), prismaUnique(prisma.user, "email"), "Email taken")
-
 try {
-  const { email } = await schema.parseAsync(input) // best-effort UX check
   await prisma.user.create({ data: { email } })
 } catch (e) {
-  if (e instanceof ZodError) throw e
-  handlePrismaError(e) // catches the race-condition slip-through
+  if (e instanceof PrismaUniqueConstraintError) console.log(e.fields) // ["email"]
+  if (e instanceof PrismaForeignKeyError) console.log(e.fieldName) // "authorId"
+  if (e instanceof PrismaRelationViolationError) console.log(e.relationName) // "UserPost"
+  if (e instanceof PrismaNotFoundError) { /* 404 */ }
 }
 ```
 
+`handlePrismaError(e)` does the conversion for you inside a `catch`; unknown errors are rethrown as-is.
+`e.cause` is the original `PrismaClientKnownRequestError`.
+
+```ts
+// Throws PrismaNotFoundError instead of returning null
+const user = await findOrThrow(() => prisma.user.findUnique({ where: { id } }))
+```
+
+## Race conditions
+
+The check and the write are two operations with a gap between them, so two concurrent requests can
+both pass the Zod check and one then fails in the database. This is by design:
+
+| Layer | Role | Failure looks like |
+|---|---|---|
+| 1. `unique()` | Best-effort, instant form feedback | `ZodError` with an issue at the field |
+| 2. `handlePrismaError` | Correctness, catches the request that lost the race | `PrismaUniqueConstraintError` |
+
+Always use both, as in [Quick start](#quick-start).
+
+## Install details
+
+Peer dependencies: `zod ^4.0.0`, `@prisma/client ^5–7` (optional, only needed for the `/prisma` import). Requires Node ≥ 22.12. ESM only.
+
+| Import | Contents | Depends on |
+|--------|----------|------------|
+| `zod-bridge` | `unique()`, `uniqueComposite()`, ORM-agnostic | `zod` only |
+| `zod-bridge/prisma` | Typed error classes, `handlePrismaError`, `findOrThrow`, `prismaUnique*` | `zod` + `@prisma/client` |
+
+The root export has no database dependency, so the validators work with any ORM or a raw query.
+Prisma is the only adapter today; others (e.g. Drizzle) can be added as `zod-bridge/<adapter>`.
+
+<details>
+<summary>Prisma 7 setup (driver adapter)</summary>
+
+Prisma 7 requires a [driver adapter](https://www.prisma.io/docs/orm/overview/databases/database-drivers) instead of a connection URL in the schema. Install the pg adapter and pass it to `PrismaClient`:
+
+```bash
+npm install @prisma/adapter-pg pg
+```
+
+```ts
+import { PrismaPg } from "@prisma/adapter-pg"
+import { PrismaClient } from "@prisma/client"
+
+const prisma = new PrismaClient({
+  adapter: new PrismaPg(process.env.DATABASE_URL),
+})
+```
+
+Prisma 5/6 users: no changes needed — `new PrismaClient()` works as before.
+
+</details>
+
+## Demo
+
+A dockerized example that installs `zod-bridge` from a freshly packed tarball and runs every feature against a real Postgres. Requires Docker only:
+
+```bash
+cd examples/demo
+docker compose up --build --abort-on-container-exit
+```
+
+Source: [`examples/demo/main.ts`](examples/demo/main.ts).
+
 ## AI agents
+
+<details>
+<summary>Why this helps when an agent writes your Prisma + Zod code</summary>
 
 If an AI coding agent writes your Prisma + Zod code, `zod-bridge` pays off twice.
 
@@ -329,6 +343,8 @@ Two things an agent should be told at the call site:
 
 - `unique()` / `uniqueComposite()` require `parseAsync` — `.parse()` throws at runtime.
 - The Zod check is best-effort; always pair it with `handlePrismaError` for the race-condition slip-through (see [Race conditions](#race-conditions)).
+
+</details>
 
 ## License
 
