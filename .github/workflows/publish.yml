@@ -28,6 +28,6 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      # Trusted publishing (OIDC): no token. Needs npm >= 11.5.1; Node 22 bundles npm 10.
+      - run: npm install -g npm@11
       - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

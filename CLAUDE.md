@@ -169,7 +169,9 @@ Prisma 7 specifics used here:
   GitHub Actions updates. Actions are pinned to commit SHAs; `test.yml`/`compat.yml` run with
   `contents: read` only.
 - `publish.yml` — on `v*` tag push: typecheck, full tests, build, `npm publish --provenance`.
-  Needs `id-token: write` (present) and `NPM_TOKEN` secret.
+  Uses npm trusted publishing (OIDC): no token or secret. Needs `id-token: write` (present),
+  npm ≥ 11.5.1 (the job installs npm 11), and the Trusted Publisher entry on npmjs.com pointing at
+  `luis-serrano-l/zod-bridge` + `publish.yml` (renaming the workflow file breaks publishing).
 - **Every job runs `npx prisma generate` right after `npm ci`.** Prisma 7 dropped the postinstall
   auto-generate, so a fresh runner has no `node_modules/.prisma/client`: without it typecheck fails
   with `Module '"@prisma/client"' has no exported member 'Prisma'` (a missing client, not a real
