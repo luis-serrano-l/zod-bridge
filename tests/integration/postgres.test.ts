@@ -28,8 +28,8 @@ beforeEach(async () => {
   await prisma.$executeRawUnsafe(`TRUNCATE "User", "Post", "Like" RESTART IDENTITY CASCADE`)
 })
 
-describe("P2002 — single field unique (real Postgres meta.target shape)", () => {
-  it("meta.target is string[] on Postgres", async () => {
+describe("P2002 — single field unique (real Postgres meta shape)", () => {
+  it("fields is [\"email\"] on Postgres", async () => {
     await prisma.user.create({ data: { email: "a@b.com" } })
 
     let caught: unknown
@@ -118,7 +118,7 @@ describe("prismaUnique — implicit self-exclusion on update", () => {
 })
 
 describe("P2002 — composite unique (uniqueComposite)", () => {
-  it("meta.target is string[] with both fields", async () => {
+  it("fields holds both columns", async () => {
     await prisma.like.create({ data: { userId: 1, postId: 2 } })
 
     let caught: unknown

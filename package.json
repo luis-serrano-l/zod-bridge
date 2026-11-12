@@ -22,7 +22,7 @@
     "build": "tsup",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "db:push": "prisma db push"
