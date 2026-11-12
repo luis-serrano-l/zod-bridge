@@ -69,3 +69,71 @@ A per-constraint message map on `handlePrismaError` (`{ unique: [{ fields, messa
 Async refine + DB insert is two queries with a race window. Two concurrent requests can both pass the refine and one fails at insert.
 
 Design: `handlePrismaError` is the safety net. The Zod check is best-effort UX (instant field-level error) and `handlePrismaError` catches slip-throughs. Documented in README as a feature.
+
+## One error shape for both paths: `toZodIssues`
+
+A route that uses `unique()` and `handlePrismaError` had two error branches for the same user-facing
+problem: a `ZodError` when the pre-check catches the conflict, a `PrismaUniqueConstraintError` when
+a concurrent request wins the race. `toZodIssues` (in `zod-bridge/prisma`) folds them into one:
+
+```ts
+toZodIssues(
+  err: unknown,
+  options?: string | { message?: string; path?: readonly PropertyKey[]; fields?: readonly string[] },
+):
+  z.core.$ZodIssue[] | undefined
+```
+
+```ts
+try {
+  const data = await UserSchema.parseAsync(input)
+  await prisma.user.create({ data }).catch(handlePrismaError)
+} catch (e) {
+  const issues = toZodIssues(e, "Email already taken")
+  if (issues) return res.status(400).json({ issues })
+  throw e
+}
+```
+
+- **Input is `unknown`, output is `issues | undefined`.** A `ZodError` returns a copy of its
+  issues, a `PrismaUniqueConstraintError` (or a raw P2002 whose write skipped `handlePrismaError`) is converted, anything else returns `undefined` so the
+  caller rethrows. Accepting the `ZodError` too is what makes it one branch; a function that only
+  took the Prisma error would still need the `instanceof ZodError` branch next to it.
+- **Same issue as `unique()`**: `{ code: "custom", message, path }` and nothing else, so the two
+  compare equal with `toEqual`. The default message is the same constant `unique()` uses
+  (`uniqueMessage()` in `src/internal/messages.ts` resolves it for both).
+- **Path mirrors the validators.** One field → `[field]`, as `prismaUnique` reports. Several fields
+  (composite) or none readable → `[]`, as `uniqueComposite` reports. `options.path` overrides, as
+  in `unique()`; it is also how a nested schema (`["user", "email"]`) is addressed.
+- **Options mirror `unique()`**: a bare string is the message. The caller passes the same message
+  and path it gave the validator. This is not the per-constraint message map rejected above: it is
+  one message at one call site, `handlePrismaError` still takes no options, and nothing is matched
+  by field name. A route guarding several constraints with different messages branches on
+  `e.fields` itself, or waits for Phase 4's `createSchema`, which knows both sides.
+- **Returns issues, not a `ZodError`.** Issues are what gets serialised; a caller that wants the
+  class does `new z.ZodError(issues)`.
+- **Only the unique-constraint error is converted.** It is the only typed error with a refinement
+  counterpart. `PrismaForeignKeyError` was considered: on create it is a field-level problem
+  ("author does not exist"), but the same error on delete means "other records still reference this
+  one", where `fieldName` is a column of another table. The error does not say which, so any default
+  message or path would be wrong half the time. `PrismaNotFoundError` and
+  `PrismaRelationViolationError` are not about the submitted values (404 / 409).
+- **The default path is a guess from the database error, and says so.** It equals the refine's
+  path only when the validator is in a top-level `z.object` on an unmapped column. A nested schema,
+  a bare parsed value (`unique()` reports at `[]`) or a `@map`ped column needs `path`. Alternatives
+  rejected: a required `path` (always exact, but every call site repeats what the common case gets
+  for free) and reading the path from the check fn (`check.path` does not know about nesting or the
+  bare-value form either, so it fixes nothing the explicit `path` does not).
+- **`fields` is an opt-in guard, not a message map.** Without it, any unique conflict is reported
+  under the caller's one message, including a constraint the form never mentioned (a server-set
+  `slug`). With `fields: ["email"]` only that constraint converts; others return `undefined` and
+  are rethrown. Several constraints chain with `??`. Unreadable fields never match: a conflict that
+  cannot be identified is rethrown rather than mislabelled, and so is everything when the list is
+  empty. Matching uses database column names (a `@map`ped field needs the column name in `fields`
+  and the Zod key in `path`). On 7.10+ a column containing `_` arrives split, so names are also
+  matched once joined with `_`, and a matched guard supplies the default path in place of the
+  error's fields.
+- **Every `ZodError` is passed through**, whichever schema threw it; `fields` does not filter it.
+  The `try` block should hold only the request parse and the write.
+- **Best effort on Prisma 7.10+**, where fields are derived from the index name: a column containing
+  `_` splits into several names and the issue lands at the root. Pass `path` when that matters.

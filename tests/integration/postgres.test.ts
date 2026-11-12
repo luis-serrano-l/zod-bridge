@@ -9,6 +9,8 @@ import {
   PrismaNotFoundError,
   PrismaUniqueConstraintError,
   prismaUnique,
+  prismaUniqueComposite,
+  toZodIssues,
 } from "../../src/adapters/prisma/index.js"
 import { unique, uniqueComposite } from "../../src/core/index.js"
 
@@ -90,6 +92,59 @@ describe("race condition — unique() + handlePrismaError safety net", () => {
     // Exactly one user row in the DB regardless of which path "won"
     const count = await prisma.user.count({ where: { email } })
     expect(count).toBe(1)
+  })
+})
+
+describe("toZodIssues — one error shape for the refine and the race window", () => {
+  it("single field: lost race and pre-check produce equal issues", async () => {
+    const Signup = z.object({
+      email: unique(z.email(), prismaUnique(prisma.user, "email"), "Email taken"),
+    })
+
+    async function signup(input: unknown, raceWinner?: () => Promise<unknown>) {
+      try {
+        const data = await Signup.parseAsync(input)
+        await raceWinner?.() // a concurrent request commits between the check and the write
+        await prisma.user.create({ data }).catch(handlePrismaError)
+        return undefined
+      } catch (e) {
+        const issues = toZodIssues(e, "Email taken") // the one error branch
+        if (issues) return { issues, layer: e instanceof ZodError ? "zod" : "prisma" }
+        throw e
+      }
+    }
+
+    const input = { email: "race@test.com" }
+    const lostRace = await signup(input, () => prisma.user.create({ data: input }))
+    const preCheck = await signup(input)
+
+    expect(lostRace?.layer).toBe("prisma")
+    expect(preCheck?.layer).toBe("zod")
+    expect(lostRace?.issues).toEqual(preCheck?.issues)
+    expect(preCheck?.issues).toEqual([{ code: "custom", message: "Email taken", path: ["email"] }])
+    expect(await prisma.user.count()).toBe(1)
+  })
+
+  it("composite: equal issues at the root and at an explicit path", async () => {
+    const data = { userId: 1, postId: 2 }
+    await prisma.like.create({ data })
+
+    const shape = z.object({ userId: z.number(), postId: z.number() })
+    const check = prismaUniqueComposite(prisma.like, ["userId", "postId"])
+    let caught: unknown
+    await prisma.like
+      .create({ data })
+      .catch(handlePrismaError)
+      .catch((e: unknown) => {
+        caught = e
+      })
+    expect(caught).toBeInstanceOf(PrismaUniqueConstraintError)
+
+    for (const options of ["Already liked", { message: "Already liked", path: ["postId"] }]) {
+      const refine = await uniqueComposite(shape, check, options).safeParseAsync(data)
+      expect(refine.success).toBe(false)
+      expect(toZodIssues(caught, options)).toEqual(refine.error?.issues)
+    }
   })
 })
 

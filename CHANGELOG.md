@@ -17,6 +17,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - JSDoc with `@example` on every public export, shipped in the `.d.ts`.
+- `toZodIssues(err, options?)` in `zod-bridge/prisma`: one error shape for both layers. Returns the
+  issues of a `ZodError`, or for a `PrismaUniqueConstraintError` the same issue `unique()` produces
+  (`{ code: "custom", message, path }`), and `undefined` for anything else, so a route needs a
+  single error branch. `fields` restricts the conversion to one constraint; `path` overrides the
+  path read from the database error.
 
 ### Fixed
 

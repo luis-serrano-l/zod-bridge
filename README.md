@@ -28,6 +28,7 @@
 - [Uniqueness validators](#uniqueness-validators)
 - [Typed Prisma errors](#typed-prisma-errors)
 - [Race conditions](#race-conditions)
+  - [One error branch for both layers](#one-error-branch-for-both-layers)
 - [Install details](#install-details)
 - [Demo](#demo)
 - [AI agents](#ai-agents)
@@ -41,7 +42,7 @@ npm install zod-bridge
 ```ts
 import { z } from "zod"
 import { unique } from "zod-bridge"
-import { prismaUnique, handlePrismaError } from "zod-bridge/prisma"
+import { prismaUnique, handlePrismaError, toZodIssues } from "zod-bridge/prisma"
 
 const UserSchema = unique(
   z.object({ id: z.number().optional(), email: z.email() }),
@@ -51,10 +52,12 @@ const UserSchema = unique(
 
 try {
   const data = await UserSchema.parseAsync(input) // layer 1: field error if taken
-  await prisma.user.create({ data })
+  await prisma.user.create({ data }).catch(handlePrismaError) // layer 2: typed error if a concurrent request won
 } catch (e) {
-  if (e instanceof z.ZodError) throw e
-  handlePrismaError(e) // layer 2: typed error if a concurrent request won
+  const issues = toZodIssues(e, "Email already taken") // one shape for both layers
+  if (issues) return res.status(400).json({ issues })
+  // [{ code: "custom", message: "Email already taken", path: ["email"] }] either way
+  throw e
 }
 ```
 
@@ -162,6 +165,7 @@ safety net for the request that loses a race (see [Race conditions](#race-condit
 | `zod-bridge/prisma` | `prismaUnique(model, field, { primaryKey? })` | Check fn for `unique()` |
 | `zod-bridge/prisma` | `prismaUniqueComposite(model, fields, { primaryKey? })` | Check fn for `uniqueComposite()` |
 | `zod-bridge/prisma` | `handlePrismaError(e)` | Rethrows a known Prisma error as a typed class, anything else untouched |
+| `zod-bridge/prisma` | `toZodIssues(e, message \| { message?, path?, fields? })` | Zod issues for a `ZodError` or a `PrismaUniqueConstraintError` (the issue `unique()` would have produced), `undefined` for anything else |
 | `zod-bridge/prisma` | `findOrThrow(() => query)` | Throws `PrismaNotFoundError` instead of returning `null` |
 
 | Prisma code | Class | Extra property |
@@ -304,6 +308,55 @@ both pass the Zod check and one then fails in the database. This is by design:
 | 2. `handlePrismaError` | Correctness, catches the request that lost the race | `PrismaUniqueConstraintError` |
 
 Always use both, as in [Quick start](#quick-start).
+
+### One error branch for both layers
+
+The two layers fail with different classes for the same problem. `toZodIssues(e, options?)` turns
+either into the same Zod issues, so the route has one branch and the client sees one shape:
+
+```ts
+try {
+  const data = await UserSchema.parseAsync(input)
+  await prisma.user.create({ data }).catch(handlePrismaError)
+} catch (e) {
+  const issues = toZodIssues(e, "Email already taken")
+  if (issues) return res.status(400).json({ issues })
+  throw e // not a validation problem: not found, foreign key, anything unknown
+}
+```
+
+| `e` is | `toZodIssues(e)` returns |
+|---|---|
+| `ZodError` | `e.issues` in a new array |
+| `PrismaUniqueConstraintError` (or a raw Prisma `P2002`) | `[{ code: "custom", message, path }]`, equal to the issue `unique()` adds |
+| anything else | `undefined` |
+
+- Pass the same options you gave the validator: a message string, or `{ message, path }`. The
+  message defaults to `"Value already taken"`, like `unique()`.
+- `path` defaults to `[field]` for a single-field constraint and to `[]` (the object root) for a
+  composite one, the same places `prismaUnique` and `uniqueComposite` report. Set `path` for a
+  nested schema (`["user", "email"]`) or to attach a composite conflict to a field.
+- Without `path` the path is read from the database error. That equals the path of `unique()`
+  when the validator sits in a top-level `z.object` and the column is not renamed. Pass `path`
+  when the schema is nested, when you parse a bare value (`path: []`), or when the column is
+  `@map`ped. A column containing `_` reports at the root on Prisma 7.10+ unless `fields` or `path`
+  names it.
+- `fields` limits the conversion to one constraint: a conflict on any other columns returns
+  `undefined` and is rethrown, instead of reaching the client under the wrong message. Chain calls
+  when a route guards several:
+
+```ts
+const issues =
+  toZodIssues(e, { fields: ["email"], message: "Email already taken" }) ??
+  toZodIssues(e, { fields: ["username"], message: "Username already taken" })
+```
+
+  `fields` are database column names, compared in any order with `PrismaUniqueConstraintError.fields`,
+  and they also set the default path. For a `@map`ped field pass the column name in `fields` and
+  the Zod key in `path`. An empty list, or an error whose fields could not be read, matches nothing.
+- Every `ZodError` is returned, whichever schema threw it. Keep only the request parse and the
+  write inside the `try`, so a failed parse of server-side data is not answered as a 400.
+- The returned array is new, the issue objects are not: copy an issue before rewriting it.
 
 ## Install details
 

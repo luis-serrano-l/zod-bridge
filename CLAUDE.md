@@ -48,9 +48,10 @@ src/
   adapters/prisma/
     index.ts                  # zod-bridge/prisma entry
     errors.ts                 # error classes + meta-shape parsing (the fragile part)
-    helpers.ts                # handlePrismaError, findOrThrow, prismaUnique, prismaUniqueComposite
+    helpers.ts                # handlePrismaError, findOrThrow, toZodIssues, prismaUnique, prismaUniqueComposite
   internal/error-adapter.ts   # single place to swap in Prisma-native typed errors if they ever ship
   internal/plain-object.ts    # isPlainObject, shared by core and adapters — must stay DB-free
+  internal/messages.ts        # uniqueMessage(), shared by unique() and toZodIssues — must stay DB-free
 tests/
   core.test.ts, prisma.test.ts        # unit (mocked PrismaClientKnownRequestError)
   types.test.ts                       # compile-time checks via @ts-expect-error (enforced by typecheck)
@@ -89,6 +90,16 @@ class PrismaForeignKeyError         { code: "P2003"; fieldName: string }
 class PrismaRelationViolationError  { code: "P2014"; relationName: string }
 handlePrismaError(err): never       // rethrows typed, or rethrows the original untouched
 findOrThrow(() => Promise<T | null>): Promise<T>
+toZodIssues(err: unknown, options?: string | { message?, path?, fields? }): z.core.$ZodIssue[] | undefined
+// ZodError → a copy of its issues; PrismaUniqueConstraintError or raw P2002 → [{ code: "custom", message, path }],
+// equal (toEqual) to the issue unique() adds when given the same message/path; anything else
+// (other Prisma codes, the other typed errors) → undefined. Default message is unique()'s
+// (uniqueMessage, src/internal/messages.ts); default path is [field] for one field, [] for composite/unreadable.
+// The default path is read from the DB error: equal to unique()'s only for a top-level z.object on
+// an unmapped column; nested / bare-scalar / @map callers pass `path`. `fields` (DB column names,
+// any order, also matched when equal once joined with `_`) restricts conversion to that constraint
+// and sets the default path; no match, unreadable fields or an empty list → undefined.
+// handlePrismaError and toZodIssues share one code→class mapping (toTyped in helpers.ts).
 prismaUnique(model, field, { primaryKey? })            // check fn for unique(); scalar or object value
 prismaUniqueComposite(model, fields, { primaryKey? })   // check fn for uniqueComposite()
 // Object value + primaryKey fields present (default "id") → that record is excluded (NOT) automatically.
@@ -113,6 +124,10 @@ dropped (see DECISIONS.md); Phase 4's `createSchema` is where that translation b
 - **The Zod check is best-effort; `handlePrismaError` is the safety net.** Two concurrent requests
   can both pass the refine and one fails at insert. Always show them together in examples. This is
   a documented feature, not a gap to "fix".
+- **`toZodIssues` must stay equal to what `unique()` emits.** Same keys (`code`, `message`, `path`),
+  same default message, same default paths. If `unique()`'s issue changes, change both; the
+  equality tests in `tests/prisma.test.ts` and the integration suite pin it. It converts only the
+  unique-constraint error (see DECISIONS.md for why foreign key is excluded).
 - **Update exclusion is implicit and comes from the parsed value.** Validate the object
   (`unique(z.object({ id, email }), prismaUnique(prisma.user, "email"))`) and merge the route id
   in before parsing. A `unique()` on the field inside `z.object` cannot see `id`: Zod refinements

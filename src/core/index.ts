@@ -1,4 +1,5 @@
 import type { ZodType } from "zod"
+import { uniqueMessage } from "../internal/messages.js"
 import { isPlainObject } from "../internal/plain-object.js"
 
 /**
@@ -87,8 +88,7 @@ export function unique<TSchema extends ZodType, TExclude = unknown>(
   check: UniqueFn<TSchema["_output"], TExclude>,
   options?: string | UniqueOptions<TExclude>,
 ): TSchema {
-  const message =
-    typeof options === "string" ? options : (options?.message ?? "Value already taken")
+  const message = uniqueMessage(options)
   const excludeWhere = typeof options === "object" ? options.excludeWhere : undefined
 
   return schema.superRefine(async (val: TSchema["_output"], ctx) => {

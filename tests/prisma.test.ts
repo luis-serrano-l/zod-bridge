@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client"
 import { describe, expect, it, vi } from "vitest"
+import { z } from "zod"
 import {
   findOrThrow,
   handlePrismaError,
@@ -10,7 +11,9 @@ import {
   PrismaUniqueConstraintError,
   prismaUnique,
   prismaUniqueComposite,
+  toZodIssues,
 } from "../src/adapters/prisma/index.js"
+import { unique, uniqueComposite } from "../src/core/index.js"
 
 function knownError(code: string, meta?: Record<string, unknown>) {
   return new Prisma.PrismaClientKnownRequestError("mock", {
@@ -280,5 +283,154 @@ describe("prismaUniqueComposite", () => {
     await expect(check({ userId: 1, postId: null })).resolves.toBe(true)
     await expect(check({ userId: 1, postId: { gt: 0 } })).resolves.toBe(true)
     expect(like.findFirst).not.toHaveBeenCalled()
+  })
+})
+
+describe("toZodIssues", () => {
+  const p2002 = (meta: Record<string, unknown>) =>
+    new PrismaUniqueConstraintError(knownError("P2002", meta))
+
+  it("single field: same issue as unique() + prismaUnique, object and field form", async () => {
+    const check = prismaUnique(mockModel({ id: 1 }), "email")
+    const objectForm = unique(z.object({ email: z.email() }), check, "Email taken")
+    const fieldForm = z.object({ email: unique(z.email(), check, "Email taken") })
+    const fromDb = toZodIssues(p2002({ target: ["email"] }), "Email taken")
+
+    expect(fromDb).toEqual([{ code: "custom", message: "Email taken", path: ["email"] }])
+    expect((await objectForm.safeParseAsync({ email: "a@b.co" })).error?.issues).toEqual(fromDb)
+    expect((await fieldForm.safeParseAsync({ email: "a@b.co" })).error?.issues).toEqual(fromDb)
+  })
+
+  it("default message matches unique()'s default", async () => {
+    const schema = unique(z.object({ email: z.email() }), prismaUnique(mockModel({}), "email"))
+    const refine = (await schema.safeParseAsync({ email: "a@b.co" })).error?.issues
+    expect(toZodIssues(p2002({ target: "email" }))).toEqual(refine)
+    expect(refine?.[0]?.message).toBe("Value already taken")
+  })
+
+  it("composite: reports at the root like uniqueComposite(), path overrides", async () => {
+    const shape = z.object({ userId: z.number(), postId: z.number() })
+    const check = prismaUniqueComposite(mockModel({}), ["userId", "postId"])
+    const err = p2002({ target: ["userId", "postId"] })
+    const input = { userId: 1, postId: 2 }
+
+    const atRoot = await uniqueComposite(shape, check, "Already liked").safeParseAsync(input)
+    expect(toZodIssues(err, "Already liked")).toEqual(atRoot.error?.issues)
+    expect(toZodIssues(err, "Already liked")?.[0]?.path).toEqual([])
+
+    const options = { message: "Already liked", path: ["postId"] }
+    const atField = await uniqueComposite(shape, check, options).safeParseAsync(input)
+    expect(toZodIssues(err, options)).toEqual(atField.error?.issues)
+    expect(toZodIssues(err, options)?.[0]?.path).toEqual(["postId"])
+  })
+
+  it("unreadable fields: one issue at the root", () => {
+    expect(toZodIssues(p2002({}))).toEqual([
+      { code: "custom", message: "Value already taken", path: [] },
+    ])
+  })
+
+  it("does not alias the caller's path array", () => {
+    const path = ["user", "email"]
+    const issues = toZodIssues(p2002({ target: ["email"] }), { path })
+    expect(issues?.[0]?.path).toEqual(path)
+    expect(issues?.[0]?.path).not.toBe(path)
+  })
+
+  it("ZodError: returns a copy of its issues", async () => {
+    const result = await z.object({ email: z.email() }).safeParseAsync({ email: "bad" })
+    const issues = toZodIssues(result.error, "ignored")
+    expect(issues).toEqual(result.error?.issues)
+    expect(issues).not.toBe(result.error?.issues)
+  })
+
+  it("raw P2002 (write skipped handlePrismaError): converted like the typed error", () => {
+    const raw = knownError("P2002", { target: ["email"] })
+    expect(toZodIssues(raw, "Email taken")).toEqual(
+      toZodIssues(new PrismaUniqueConstraintError(raw), "Email taken"),
+    )
+    expect(toZodIssues(knownError("P2025"))).toBeUndefined()
+  })
+
+  it("fields guard: converts only the named constraint, in any order", () => {
+    const email = p2002({ target: ["email"] })
+    const like = p2002({ target: ["userId", "postId"] })
+
+    expect(toZodIssues(email, { fields: ["email"], message: "Email taken" })).toEqual([
+      { code: "custom", message: "Email taken", path: ["email"] },
+    ])
+    expect(toZodIssues(email, { fields: ["username"] })).toBeUndefined()
+    expect(toZodIssues(email, { fields: ["email", "tenantId"] })).toBeUndefined()
+    expect(toZodIssues(like, { fields: ["postId", "userId"] })).toHaveLength(1)
+    expect(toZodIssues(like, { fields: ["postId"] })).toBeUndefined()
+    // Unreadable meta cannot be matched: not converted, the caller rethrows.
+    expect(toZodIssues(p2002({}), { fields: ["email"] })).toBeUndefined()
+  })
+
+  it("fields guard: chained calls give each constraint its own message", () => {
+    const convert = (e: unknown) =>
+      toZodIssues(e, { fields: ["email"], message: "Email taken" }) ??
+      toZodIssues(e, { fields: ["username"], message: "Username taken" })
+
+    expect(convert(p2002({ target: ["username"] }))).toEqual([
+      { code: "custom", message: "Username taken", path: ["username"] },
+    ])
+    expect(convert(p2002({ target: ["slug"] }))).toBeUndefined()
+  })
+
+  it("fields guard: matches a column whose name was split on _ (Prisma 7.10+)", () => {
+    const err = p2002({
+      driverAdapterError: { cause: { constraint: { index: "User_user_name_key" }, table: "User" } },
+    })
+    expect(err.fields).toEqual(["user", "name"])
+    // Unguarded, the split name looks composite: root path. The guard knows the real name.
+    expect(toZodIssues(err, "Taken")?.[0]?.path).toEqual([])
+    expect(toZodIssues(err, { fields: ["user_name"], message: "Taken" })).toEqual([
+      { code: "custom", message: "Taken", path: ["user_name"] },
+    ])
+    expect(toZodIssues(err, { fields: ["user"] })).toBeUndefined()
+  })
+
+  it("fields guard: default path comes from the caller's fields, path still overrides", () => {
+    const like = p2002({ target: ["userId", "postId"] })
+    expect(toZodIssues(like, { fields: ["postId", "userId"] })?.[0]?.path).toEqual([])
+    expect(
+      toZodIssues(like, { fields: ["postId", "userId"], path: ["postId"] })?.[0]?.path,
+    ).toEqual(["postId"])
+    // @map: match on the column name, report at the Zod key
+    const mapped = p2002({ target: ["email_address"] })
+    expect(toZodIssues(mapped, { fields: ["email_address"], path: ["email"] })?.[0]?.path).toEqual([
+      "email",
+    ])
+  })
+
+  it("fields guard: an empty list matches nothing", () => {
+    expect(toZodIssues(p2002({ target: ["email"] }), { fields: [] })).toBeUndefined()
+  })
+
+  it("handlePrismaError and toZodIssues agree on what a raw error is", () => {
+    for (const code of ["P2002", "P2025", "P2003", "P2014", "P1001"]) {
+      const raw = knownError(code, { target: ["email"] })
+      let typed: unknown
+      try {
+        handlePrismaError(raw)
+      } catch (e) {
+        typed = e
+      }
+      expect(toZodIssues(raw)).toEqual(toZodIssues(typed))
+    }
+  })
+
+  it("fields guard does not filter a ZodError", async () => {
+    const result = await z.object({ name: z.string() }).safeParseAsync({})
+    expect(toZodIssues(result.error, { fields: ["email"] })).toEqual(result.error?.issues)
+  })
+
+  it("anything else: undefined, so the caller rethrows", () => {
+    expect(toZodIssues(new PrismaNotFoundError(knownError("P2025")))).toBeUndefined()
+    expect(toZodIssues(new PrismaForeignKeyError(knownError("P2003")))).toBeUndefined()
+    expect(toZodIssues(new PrismaRelationViolationError(knownError("P2014")))).toBeUndefined()
+    expect(toZodIssues(new Error("boom"))).toBeUndefined()
+    expect(toZodIssues(undefined)).toBeUndefined()
   })
 })
