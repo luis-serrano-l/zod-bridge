@@ -47,9 +47,20 @@ describe("core", () => {
     })
   })
 
+  it("options.path chooses where the issue is reported", async () => {
+    const schema = uniqueComposite(
+      z.object({ userId: z.number(), postId: z.number() }),
+      async () => false,
+      { message: "Already liked this post", path: ["postId"] },
+    )
+
+    const result = await schema.safeParseAsync({ userId: 1, postId: 2 })
+    expect(result.error?.issues.map((i) => i.path)).toEqual([["postId"]])
+  })
+
   it("unique() reports the issue at the check fn's path hint", async () => {
     const check = Object.assign(
-      vi.fn(async (_val: { id?: number; email: string }) => false),
+      vi.fn(async (_val: { id?: number | undefined; email: string }) => false),
       { path: ["email"] },
     )
     const schema = unique(z.object({ id: z.number().optional(), email: z.string() }), check, "Taken")

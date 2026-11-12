@@ -15,7 +15,7 @@ function knownError(code: string, meta?: Record<string, unknown>) {
   return new Prisma.PrismaClientKnownRequestError("mock", {
     code,
     clientVersion: "0.0.0",
-    meta,
+    ...(meta === undefined ? {} : { meta }),
   })
 }
 
@@ -139,7 +139,7 @@ describe("prisma adapter", () => {
 })
 
 function mockModel(existing: unknown = null) {
-  return { findFirst: vi.fn(async (_args?: { where?: unknown }) => existing) }
+  return { findFirst: vi.fn(async (_args?: { where?: Record<string, unknown> }) => existing) }
 }
 
 describe("prismaUnique", () => {
@@ -204,6 +204,20 @@ describe("prismaUnique", () => {
     await expect(prismaUnique(user, "email")({ id: 7 })).resolves.toBe(true)
     expect(user.findFirst).not.toHaveBeenCalled()
   })
+
+  it("skips null and filter-shaped values instead of querying with them", async () => {
+    const user = mockModel({ id: 1 })
+    const check = prismaUnique(user, "email")
+
+    await expect(check({ email: null })).resolves.toBe(true)
+    await expect(check({ email: { startsWith: "a" } })).resolves.toBe(true)
+    expect(user.findFirst).not.toHaveBeenCalled()
+
+    // non-plain objects are real values
+    const at = new Date(0)
+    await check({ email: at })
+    expect(user.findFirst).toHaveBeenCalledWith({ where: { email: at } })
+  })
 })
 
 describe("prismaUniqueComposite", () => {
@@ -221,11 +235,13 @@ describe("prismaUniqueComposite", () => {
     expect(check.path).toBeUndefined()
   })
 
-  it("skips the query when a field is absent", async () => {
+  it("skips the query when a field is absent, null or filter-shaped", async () => {
     const like = mockModel({ id: 9 })
     const check = prismaUniqueComposite(like, ["userId", "postId"])
 
     await expect(check({ userId: 1 })).resolves.toBe(true)
+    await expect(check({ userId: 1, postId: null })).resolves.toBe(true)
+    await expect(check({ userId: 1, postId: { gt: 0 } })).resolves.toBe(true)
     expect(like.findFirst).not.toHaveBeenCalled()
   })
 })

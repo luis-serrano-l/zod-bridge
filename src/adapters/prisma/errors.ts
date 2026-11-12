@@ -39,7 +39,7 @@ function extractUniqueFields(meta: Record<string, unknown> | undefined): string[
 // a field name containing an underscore is split into several fields.
 function fieldsFromIndexName(index: unknown, table: unknown): string[] {
   if (typeof index !== "string" || !index.endsWith("_key")) return []
-  const prefix = typeof table === "string" ? `${table}_` : ""
+  const prefix = typeof table === "string" ? `${unquote(table)}_` : ""
   if (!index.startsWith(prefix)) return []
   return index
     .slice(prefix.length, -"_key".length)

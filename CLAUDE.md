@@ -22,7 +22,7 @@ Long-form docs live elsewhere; do not duplicate them here:
 
 ```bash
 npm run build            # tsup → dist/ (ESM only, .d.ts bundled)
-npm run typecheck        # tsc --noEmit, strict
+npm run typecheck        # tsc --noEmit -p tsconfig.test.json: src + tests, strict
 npm test                 # vitest run — unit + integration (integration needs Docker)
 npm run test:unit        # tests/*.test.ts — no DB, no Docker, fast
 npm run test:integration # tests/integration/ — real Postgres via testcontainers
@@ -50,6 +50,7 @@ src/
   internal/error-adapter.ts   # single place to swap in Prisma-native typed errors if they ever ship
 tests/
   core.test.ts, prisma.test.ts        # unit (mocked PrismaClientKnownRequestError)
+  types.test.ts                       # compile-time checks via @ts-expect-error (enforced by typecheck)
   integration/postgres.test.ts        # real Postgres
   integration/setup.ts                # vitest globalSetup: starts container, runs db push
 prisma/schema.prisma, prisma.config.ts  # test schema: User (unique email), Post (FK), Like (composite unique)
@@ -73,7 +74,7 @@ Adding an adapter (Drizzle, Kysely): new folder `src/adapters/<name>/`, new tsup
 
 ```ts
 // zod-bridge
-unique(schema, check, options?: string | { message?, excludeWhere? })   // returns schema.superRefine(async ...)
+unique(schema, check, options?: string | { message?, excludeWhere?, path? })   // returns schema.superRefine(async ...)
 uniqueComposite === unique   // alias; the check fn receives the whole object
 type UniqueOptions<TExclude = unknown>   // TExclude = type of excludeWhere, inferred from the check fn
 
@@ -90,7 +91,9 @@ prismaUniqueComposite(model, fields, { primaryKey? })   // check fn for uniqueCo
 // prismaUnique reports at path [field] in object form. excludeWhere (typed as WhereInput) overrides.
 // Every typed error keeps the original PrismaClientKnownRequestError as `cause`.
 // unique() skips the check fn when the value already has an issue at/under the check's path
-// (any issue when there is no path hint). Prisma checks return true when a checked field is absent.
+// (any issue when there is no path hint). options.path overrides where the issue is reported.
+// Prisma checks return true (no query) when a checked field is absent, null (SQL NULLs never
+// conflict) or a plain object (Prisma would read it as a filter: an oracle if the schema allows it).
 ```
 
 `handlePrismaError` takes **no options object**. A per-constraint message map was considered and

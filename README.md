@@ -157,7 +157,7 @@ safety net for the request that loses a race (see [Race conditions](#race-condit
 
 | Import | Export | What it does |
 |---|---|---|
-| `zod-bridge` | `unique(schema, check, options?)` | Wraps a schema with an async uniqueness check |
+| `zod-bridge` | `unique(schema, check, message \| { message?, path?, excludeWhere? })` | Wraps a schema with an async uniqueness check |
 | `zod-bridge` | `uniqueComposite(schema, check, options?)` | Same, for multi-field constraints |
 | `zod-bridge/prisma` | `prismaUnique(model, field, { primaryKey? })` | Check fn for `unique()` |
 | `zod-bridge/prisma` | `prismaUniqueComposite(model, fields, { primaryKey? })` | Check fn for `uniqueComposite()` |
@@ -240,7 +240,9 @@ const LikeSchema = uniqueComposite(
 const result = await LikeSchema.safeParseAsync({ userId, postId })
 ```
 
-If any of the listed fields is absent from the parsed value, the check is skipped.
+The issue is reported at the root of the object; pass `{ message, path: ["postId"] }` as the third
+argument to attach it to a field. If any of the listed fields is absent or `null`, the check is
+skipped (SQL unique constraints never conflict on `NULL`).
 
 ### Generic check function (without Prisma)
 
@@ -349,6 +351,10 @@ Two things an agent should be told at the call site:
 - The Zod check is best-effort; always pair it with `handlePrismaError` for the race-condition slip-through (see [Race conditions](#race-conditions)).
 
 </details>
+
+## Project
+
+[Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md) · [Design decisions](DECISIONS.md) · [Roadmap](ROADMAP.md)
 
 ## License
 

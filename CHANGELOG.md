@@ -10,10 +10,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - `unique()` and `uniqueComposite()`: async uniqueness validators for Zod v4. The check function
-  is skipped when the value already has an issue.
+  is skipped when the value already has an issue. `options.path` sets where the issue is reported.
 - `prismaUnique` and `prismaUniqueComposite`: Prisma check functions for the validators above.
   On update, the record is excluded from the check automatically through `primaryKey` (default
-  `"id"`). An `excludeWhere` option overrides this.
+  `"id"`). An `excludeWhere` option overrides this. Absent, `null` and filter-shaped (plain object)
+  values are never sent to the database.
 - Typed Prisma errors, each keeping the original error as `cause`:
   - `PrismaUniqueConstraintError` (P2002) with `fields`
   - `PrismaNotFoundError` (P2025)

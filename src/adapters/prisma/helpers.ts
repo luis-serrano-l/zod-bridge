@@ -62,6 +62,20 @@ function isObject(val: unknown): val is Record<string, unknown> {
   return typeof val === "object" && val !== null && !Array.isArray(val)
 }
 
+/**
+ * Values that must not reach `where`:
+ * - `undefined` drops out of the filter and would match unrelated rows
+ * - `null` never conflicts (SQL unique constraints treat NULLs as distinct)
+ * - a plain object would be read by Prisma as a filter (`{ startsWith: "a" }`),
+ *   turning the check into an oracle if the schema lets one through
+ */
+function isUncheckable(value: unknown): boolean {
+  if (value === undefined || value === null) return true
+  if (typeof value !== "object" || Array.isArray(value)) return false
+  const proto: unknown = Object.getPrototypeOf(value)
+  return proto === Object.prototype || proto === null
+}
+
 /** `{ id: val.id }` when every primary-key field is present, else undefined. */
 function implicitExclude(
   val: Record<string, unknown>,
@@ -90,9 +104,9 @@ export function prismaUnique<M extends FindFirstModel>(
     let exclude: unknown = opts?.excludeWhere
     if (isObject(val)) {
       value = val[field]
-      if (value === undefined) return true
       exclude ??= implicitExclude(val, primaryKey)
     }
+    if (isUncheckable(value)) return true
     const where = exclude ? { [field]: value, NOT: exclude } : { [field]: value }
     const existing = await model.findFirst({ where })
     return existing === null || existing === undefined
@@ -111,8 +125,7 @@ export function prismaUniqueComposite<M extends FindFirstModel>(
 ): UniqueFn<Record<string, unknown>, WhereOf<M>> {
   const primaryKey = options.primaryKey ?? "id"
   return async (val, opts) => {
-    // An absent field would drop out of `where` and match unrelated rows.
-    if (fields.some((f) => val[f] === undefined)) return true
+    if (fields.some((f) => isUncheckable(val[f]))) return true
     const fieldWhere = Object.fromEntries(fields.map((f) => [f, val[f]]))
     const exclude = opts?.excludeWhere ?? implicitExclude(val, primaryKey)
     const where = exclude ? { ...fieldWhere, NOT: exclude } : fieldWhere

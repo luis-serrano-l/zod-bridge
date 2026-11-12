@@ -8,6 +8,11 @@ import type { ZodType } from "zod"
 export type UniqueOptions<TExclude = unknown> = {
   readonly message?: string
   readonly excludeWhere?: TExclude
+  /**
+   * Where to report the issue. Overrides the check fn's own path hint; useful
+   * for composite checks, which otherwise report at the root of the object.
+   */
+  readonly path?: readonly PropertyKey[]
 }
 
 /**
@@ -32,7 +37,7 @@ export function unique<TSchema extends ZodType, TExclude = unknown>(
   return schema.superRefine(async (val: TSchema["_output"], ctx) => {
     // Don't hit the DB for a value that already failed validation. With a path
     // hint only issues at or under that path count; without one, any issue does.
-    const path = check.path ?? []
+    const path = (typeof options === "object" ? options.path : undefined) ?? check.path ?? []
     const alreadyInvalid = ctx.issues.some((issue) =>
       path.every((key, i) => issue.path?.[i] === key),
     )
