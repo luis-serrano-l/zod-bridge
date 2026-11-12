@@ -15,7 +15,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   On update, the record is excluded from the check automatically through `primaryKey` (default
   `"id"`). An `excludeWhere` option overrides this. Absent, `null` and filter-shaped (plain object)
   values are never sent to the database.
-- Typed Prisma errors, each keeping the original error as `cause`:
+- Typed Prisma errors, each extending `PrismaBridgeError` and keeping the original error as `cause`:
   - `PrismaUniqueConstraintError` (P2002) with `fields`
   - `PrismaNotFoundError` (P2025)
   - `PrismaForeignKeyError` (P2003) with `fieldName`

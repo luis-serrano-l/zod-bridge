@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client"
 import { describe, expect, it, vi } from "vitest"
 import {
+  PrismaBridgeError,
   PrismaForeignKeyError,
   PrismaNotFoundError,
   PrismaRelationViolationError,
@@ -26,6 +27,13 @@ describe("prisma adapter", () => {
     expect(err).toBeInstanceOf(Error)
     expect(err.code).toBe("P2002")
     expect(err.fields).toEqual(["email"])
+  })
+
+  it("every typed error is a PrismaBridgeError; other errors are not", () => {
+    for (const code of ["P2002", "P2025", "P2003", "P2014"]) {
+      expect(() => handlePrismaError(knownError(code))).toThrow(PrismaBridgeError)
+    }
+    expect(() => handlePrismaError(knownError("P1001"))).not.toThrow(PrismaBridgeError)
   })
 
   it("typed errors keep the original Prisma error as cause", () => {

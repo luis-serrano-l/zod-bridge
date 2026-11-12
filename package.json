@@ -40,7 +40,7 @@
     "error-handling",
     "async-validation"
   ],
-  "author": "",
+  "author": "luis-serrano-l (https://github.com/luis-serrano-l)",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/luis-serrano-l/zod-bridge.git"

@@ -79,6 +79,7 @@ uniqueComposite === unique   // alias; the check fn receives the whole object
 type UniqueOptions<TExclude = unknown>   // TExclude = type of excludeWhere, inferred from the check fn
 
 // zod-bridge/prisma
+abstract class PrismaBridgeError   { code: string }   // base of the four classes below
 class PrismaUniqueConstraintError   { code: "P2002"; fields: string[] }
 class PrismaNotFoundError           { code: "P2025" }
 class PrismaForeignKeyError         { code: "P2003"; fieldName: string }

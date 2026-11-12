@@ -171,7 +171,8 @@ safety net for the request that loses a race (see [Race conditions](#race-condit
 | `P2003` foreign key | `PrismaForeignKeyError` | `fieldName: string` |
 | `P2014` relation violation | `PrismaRelationViolationError` | `relationName: string` |
 
-Every class has a literal `code` and keeps the original Prisma error as `cause`.
+Every class extends `PrismaBridgeError` (one `instanceof` catches them all), has a literal `code`
+and keeps the original Prisma error as `cause`.
 
 ## Uniqueness validators
 

@@ -1,12 +1,24 @@
 import type { Prisma } from "@prisma/client"
 
-export class PrismaUniqueConstraintError extends Error {
+/**
+ * Base of every typed error in this module: `e instanceof PrismaBridgeError`
+ * matches any of them. `cause` is the original Prisma error.
+ */
+export abstract class PrismaBridgeError extends Error {
+  abstract readonly code: string
+
+  constructor(message: string, original: Prisma.PrismaClientKnownRequestError) {
+    super(message, { cause: original })
+  }
+}
+
+export class PrismaUniqueConstraintError extends PrismaBridgeError {
   readonly code = "P2002"
   readonly fields: string[]
 
   constructor(original: Prisma.PrismaClientKnownRequestError) {
     const fields = extractUniqueFields(original.meta)
-    super(`Unique constraint failed on: ${fields.join(", ")}`, { cause: original })
+    super(`Unique constraint failed on: ${fields.join(", ")}`, original)
     this.name = "PrismaUniqueConstraintError"
     this.fields = fields
   }
@@ -52,23 +64,23 @@ function unquote(s: string): string {
   return s.startsWith('"') && s.endsWith('"') ? s.slice(1, -1) : s
 }
 
-export class PrismaNotFoundError extends Error {
+export class PrismaNotFoundError extends PrismaBridgeError {
   readonly code = "P2025"
 
   constructor(original: Prisma.PrismaClientKnownRequestError) {
     const cause = original.meta?.["cause"]
-    super(typeof cause === "string" ? cause : "Record not found", { cause: original })
+    super(typeof cause === "string" ? cause : "Record not found", original)
     this.name = "PrismaNotFoundError"
   }
 }
 
-export class PrismaForeignKeyError extends Error {
+export class PrismaForeignKeyError extends PrismaBridgeError {
   readonly code = "P2003"
   readonly fieldName: string
 
   constructor(original: Prisma.PrismaClientKnownRequestError) {
     const name = extractForeignKeyField(original.meta)
-    super(`Foreign key constraint failed on: ${name}`, { cause: original })
+    super(`Foreign key constraint failed on: ${name}`, original)
     this.name = "PrismaForeignKeyError"
     this.fieldName = name
   }
@@ -94,14 +106,14 @@ function extractForeignKeyField(meta: Record<string, unknown> | undefined): stri
   return firstUnderscore === -1 ? withoutSuffix : withoutSuffix.slice(firstUnderscore + 1)
 }
 
-export class PrismaRelationViolationError extends Error {
+export class PrismaRelationViolationError extends PrismaBridgeError {
   readonly code = "P2014"
   readonly relationName: string
 
   constructor(original: Prisma.PrismaClientKnownRequestError) {
     const rel = original.meta?.["relation_name"]
     const name = typeof rel === "string" ? rel : ""
-    super(`Relation violation: ${name}`, { cause: original })
+    super(`Relation violation: ${name}`, original)
     this.name = "PrismaRelationViolationError"
     this.relationName = name
   }
