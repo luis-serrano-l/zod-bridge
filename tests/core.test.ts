@@ -99,4 +99,44 @@ describe("core", () => {
     expect(check).toHaveBeenCalledTimes(1)
     expect(result.error?.issues.map((i) => i.path)).toEqual([["name"], ["email"]])
   })
+
+  it("unique() ignores the path hint when the value is not an object", async () => {
+    // Field-level use: the hint names a key of the parent object, which the
+    // refinement cannot see. Zod prefixes the parent key itself.
+    const check = Object.assign(
+      vi.fn(async (_val: string) => false),
+      { path: ["email"] },
+    )
+    const schema = z.object({ email: unique(z.email(), check, "Taken") })
+
+    const taken = await schema.safeParseAsync({ email: "a@b.co" })
+    expect(taken.error?.issues).toEqual([{ code: "custom", message: "Taken", path: ["email"] }])
+
+    check.mockClear()
+    await schema.safeParseAsync({ email: "bad" })
+    expect(check).not.toHaveBeenCalled()
+  })
+
+  it("unique() ignores the path hint for non-plain objects (Date, array)", async () => {
+    const check = Object.assign(
+      vi.fn(async (_val: unknown) => false),
+      { path: ["at"] },
+    )
+    const min = new Date(2030, 0, 1)
+    const dates = z.object({ at: unique(z.date().min(min), check, "Taken") })
+
+    const taken = await dates.safeParseAsync({ at: new Date(2031, 0, 1) })
+    expect(taken.error?.issues.map((i) => i.path)).toEqual([["at"]])
+
+    check.mockClear()
+    await dates.safeParseAsync({ at: new Date(2020, 0, 1) })
+    expect(check).not.toHaveBeenCalled()
+
+    const lists = z.object({ at: unique(z.array(z.string()).min(1), check, "Taken") })
+    const list = await lists.safeParseAsync({ at: ["a"] })
+    expect(list.error?.issues.map((i) => i.path)).toEqual([["at"]])
+    check.mockClear()
+    await lists.safeParseAsync({ at: [] })
+    expect(check).not.toHaveBeenCalled()
+  })
 })

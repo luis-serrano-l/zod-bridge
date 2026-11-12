@@ -1,4 +1,5 @@
 import type { ZodType } from "zod"
+import { isPlainObject } from "../internal/plain-object.js"
 
 /**
  * Options of `unique()` / `uniqueComposite()`. A bare string is shorthand for
@@ -36,7 +37,9 @@ export type UniqueOptions<TExclude = unknown> = {
  *
  * A check fn may carry a `path` hint: where in the parsed value the issue
  * belongs. Adapters set it when they validate a field of an object (e.g.
- * `prismaUnique(prisma.user, "email")` reports at `["email"]`).
+ * `prismaUnique(prisma.user, "email")` reports at `["email"]`). The hint is
+ * ignored unless the parsed value is a plain object (not a Date, array or
+ * class instance).
  *
  * @example
  * const usernameFree: UniqueFn<string> = async (name) => !(await redis.exists(`user:${name}`))
@@ -89,9 +92,14 @@ export function unique<TSchema extends ZodType, TExclude = unknown>(
   const excludeWhere = typeof options === "object" ? options.excludeWhere : undefined
 
   return schema.superRefine(async (val: TSchema["_output"], ctx) => {
+    // The check fn's path hint names a key of the parsed object, so it only
+    // applies when the value is a plain object. Field-level use (`z.object({
+    // email: unique(...) })`, any field type) reports at the root of the field;
+    // Zod adds the parent key.
+    const hint = isPlainObject(val) ? check.path : undefined
     // Don't hit the DB for a value that already failed validation. With a path
-    // hint only issues at or under that path count; without one, any issue does.
-    const path = (typeof options === "object" ? options.path : undefined) ?? check.path ?? []
+    // only issues at or under it count; without one, any issue does.
+    const path = (typeof options === "object" ? options.path : undefined) ?? hint ?? []
     const alreadyInvalid = ctx.issues.some((issue) =>
       path.every((key, i) => issue.path?.[i] === key),
     )

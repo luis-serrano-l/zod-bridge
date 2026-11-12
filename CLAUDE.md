@@ -50,6 +50,7 @@ src/
     errors.ts                 # error classes + meta-shape parsing (the fragile part)
     helpers.ts                # handlePrismaError, findOrThrow, prismaUnique, prismaUniqueComposite
   internal/error-adapter.ts   # single place to swap in Prisma-native typed errors if they ever ship
+  internal/plain-object.ts    # isPlainObject, shared by core and adapters — must stay DB-free
 tests/
   core.test.ts, prisma.test.ts        # unit (mocked PrismaClientKnownRequestError)
   types.test.ts                       # compile-time checks via @ts-expect-error (enforced by typecheck)
@@ -95,6 +96,9 @@ prismaUniqueComposite(model, fields, { primaryKey? })   // check fn for uniqueCo
 // Every typed error keeps the original PrismaClientKnownRequestError as `cause`.
 // unique() skips the check fn when the value already has an issue at/under the check's path
 // (any issue when there is no path hint). options.path overrides where the issue is reported.
+// The check fn's path hint applies only when the parsed value is a plain object (isPlainObject in
+// src/internal/plain-object.ts, shared by core and prismaUnique): field-level use inside z.object
+// reports at the field root (Zod adds the parent key), never at [field, field].
 // Prisma checks return true (no query) when a checked field is absent, null (SQL NULLs never
 // conflict) or a plain object (Prisma would read it as a filter: an oracle if the schema allows it).
 ```

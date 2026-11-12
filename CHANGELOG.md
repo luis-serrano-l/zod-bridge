@@ -18,6 +18,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - JSDoc with `@example` on every public export, shipped in the `.d.ts`.
 
+### Fixed
+
+- `unique()` used inside `z.object` with a check fn that carries a path hint
+  (`z.object({ email: unique(z.email(), prismaUnique(prisma.user, "email")) })`) reported the issue
+  at `["email", "email"]` and queried the database even when the field had already failed
+  validation. The hint now applies only when the parsed value is a plain object; a field-level
+  check of any type (string, number, Date, array, Decimal) reports at `["email"]`.
+- `prismaUnique` treated a bare `Date`, `Buffer` or `Decimal` value as the object form and
+  skipped the check. Only plain objects are read as "an object holding the field" now.
+
 ## [0.1.0] - 2026-11-12
 
 First release.

@@ -117,6 +117,27 @@ describe("prismaUnique — implicit self-exclusion on update", () => {
   })
 })
 
+describe("prismaUnique — field-level use inside z.object", () => {
+  it("reports at [field] and skips the query for an invalid value", async () => {
+    await prisma.user.create({ data: { email: "a@b.com" } })
+    const schema = z.object({
+      email: unique(z.email(), prismaUnique(prisma.user, "email"), "Email taken"),
+    })
+
+    const taken = await schema.safeParseAsync({ email: "a@b.com" })
+    expect(taken.error?.issues).toEqual([
+      { code: "custom", message: "Email taken", path: ["email"] },
+    ])
+
+    const invalid = await schema.safeParseAsync({ email: "not-an-email" })
+    expect(invalid.error?.issues.map((i) => i.code)).toEqual(["invalid_format"])
+
+    await expect(schema.parseAsync({ email: "free@b.com" })).resolves.toEqual({
+      email: "free@b.com",
+    })
+  })
+})
+
 describe("P2002 — composite unique (uniqueComposite)", () => {
   it("fields holds both columns", async () => {
     await prisma.like.create({ data: { userId: 1, postId: 2 } })

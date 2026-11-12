@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client"
 import type { UniqueFn, UniqueOptions } from "../../core/index.js"
+import { isPlainObject } from "../../internal/plain-object.js"
 import {
   PrismaForeignKeyError,
   PrismaNotFoundError,
@@ -96,10 +97,6 @@ export type PrismaUniqueOptions<M extends FindFirstModel> = {
 
 type KeyOf<M extends FindFirstModel> = Extract<keyof WhereOf<M>, string>
 
-function isObject(val: unknown): val is Record<string, unknown> {
-  return typeof val === "object" && val !== null && !Array.isArray(val)
-}
-
 /**
  * Values that must not reach `where`:
  * - `undefined` drops out of the filter and would match unrelated rows
@@ -108,10 +105,7 @@ function isObject(val: unknown): val is Record<string, unknown> {
  *   turning the check into an oracle if the schema lets one through
  */
 function isUncheckable(value: unknown): boolean {
-  if (value === undefined || value === null) return true
-  if (typeof value !== "object" || Array.isArray(value)) return false
-  const proto: unknown = Object.getPrototypeOf(value)
-  return proto === Object.prototype || proto === null
+  return value === undefined || value === null || isPlainObject(value)
 }
 
 /** `{ id: val.id }` when every primary-key field is present, else undefined. */
@@ -126,7 +120,7 @@ function implicitExclude(
 
 /**
  * Check fn for `unique()`: resolves `true` when no row of `model` has this
- * value in `field`. Accepts either the bare field value or an object that
+ * value in `field`. Accepts either the bare field value or a plain object that
  * contains it. In object form the issue is reported at `[field]`, and if the
  * object carries the primary key (default `"id"`) that record is excluded, so
  * saving a record with its own value is not a conflict.
@@ -158,7 +152,9 @@ export function prismaUnique<M extends FindFirstModel>(
   const check = async (val: unknown, opts?: UniqueOptions<WhereOf<M>>) => {
     let value = val
     let exclude: unknown = opts?.excludeWhere
-    if (isObject(val)) {
+    // Same test core uses to apply the path hint: a Date, array or Decimal is
+    // the bare field value, not an object holding it.
+    if (isPlainObject(val)) {
       value = val[field]
       exclude ??= implicitExclude(val, primaryKey)
     }

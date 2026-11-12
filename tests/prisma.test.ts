@@ -182,6 +182,17 @@ describe("prismaUnique", () => {
     await expect(check("a@b.c")).resolves.toBe(false)
   })
 
+  it("scalar mode: a Date or array is the field value, not an object holding it", async () => {
+    const event = mockModel()
+    const at = new Date(2030, 0, 1)
+    await prismaUnique(event, "startsAt")(at)
+    expect(event.findFirst).toHaveBeenCalledWith({ where: { startsAt: at } })
+
+    const post = mockModel()
+    await prismaUnique(post, "tags")(["a", "b"])
+    expect(post.findFirst).toHaveBeenCalledWith({ where: { tags: ["a", "b"] } })
+  })
+
   it("object mode without primary key: plain check", async () => {
     const user = mockModel()
     await prismaUnique(user, "email")({ email: "a@b.c" })
