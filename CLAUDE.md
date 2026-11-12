@@ -189,7 +189,7 @@ Prisma 7 specifics used here:
 ## Status
 
 Phase 0 ✅ · 0.5 ✅ · 1 (typed errors) ✅ · 3 (Zod extension) ✅ · **Phase 4 (schema bridge) next**.
-`0.1.0` is built but not yet published (see the `release-check` skill).
+`0.1.0` is published on npm with provenance (2026-11-12, tag `v0.1.0`). Run the `release-check` skill before any further release.
 
 Phase 4 plan: `createSchema(prisma.user, overrides)` in `zod-bridge/prisma`, deriving the base
 shape from the Prisma schema, merging Zod overrides, wiring `primaryKey` for update exclusion.

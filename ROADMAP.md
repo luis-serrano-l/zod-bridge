@@ -302,7 +302,7 @@ Publish to npm as `0.1.0` when:
 - [x] Tests: composite unique mapping works (unit + Postgres integration)
 - [x] README example
 - [x] CI green
-- [ ] Published to npm as `0.1.0`
+- [x] Published to npm as `0.1.0`
 
 ---
 
@@ -472,7 +472,7 @@ const EmailSchema = unique(
 | Phase 0 complete | ✅ | Folder structure, exports, peer deps, CI configured |
 | Phase 0.5 complete | ✅ | All design decisions documented in DECISIONS.md |
 | Real-project test | ⬜ | Install via `npm link` in a real project, validate API feel |
-| Phase 1 complete | ✅ built, not yet published | Real-project test done, published as `0.1.0` on npm |
+| Phase 1 complete | ✅ published as `0.1.0` | Real-project test done, published as `0.1.0` on npm |
 | Phase 3 complete | ✅ built | Zod extension stable |
 | Phase 4 complete | ⬜ | Schema bridge tested with real apps |
 
