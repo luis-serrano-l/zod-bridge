@@ -81,7 +81,25 @@ describe("prisma adapter", () => {
     expect(err).toBeInstanceOf(PrismaNotFoundError)
     expect(err).toBeInstanceOf(Error)
     expect(err.code).toBe("P2025")
-    expect(err.message).toBe("No User found")
+    expect(err.message).toMatch(/^No User found\. Fix: /)
+  })
+
+  it("every typed error message names the fix, even when meta is unreadable", () => {
+    const errors = [
+      new PrismaUniqueConstraintError(knownError("P2002", { target: ["email"] })),
+      new PrismaUniqueConstraintError(knownError("P2002", {})),
+      new PrismaNotFoundError(knownError("P2025", { cause: "Record to update not found." })),
+      new PrismaNotFoundError(knownError("P2025", {})),
+      new PrismaForeignKeyError(knownError("P2003", { field_name: "authorId" })),
+      new PrismaForeignKeyError(knownError("P2003", {})),
+      new PrismaRelationViolationError(knownError("P2014", { relation_name: "PostToUser" })),
+      new PrismaRelationViolationError(knownError("P2014", {})),
+    ]
+    for (const err of errors) expect(err.message).toMatch(/\. Fix: \S/)
+    expect(errors[0]?.message).toMatch(/^Unique constraint failed on: email\. Fix: /)
+    expect(errors[1]?.message).toContain("inspect error.cause.meta")
+    expect(errors[2]?.message).toMatch(/^Record to update not found\. Fix: /)
+    expect(errors[5]?.message).toContain("inspect error.cause.meta")
   })
 
   it("PrismaForeignKeyError instanceof check", () => {

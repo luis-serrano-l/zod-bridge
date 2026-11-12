@@ -7,6 +7,26 @@ import {
   PrismaUniqueConstraintError,
 } from "./errors.js"
 
+/**
+ * Rethrows a Prisma known request error as a typed class: P2002 →
+ * `PrismaUniqueConstraintError`, P2025 → `PrismaNotFoundError`, P2003 →
+ * `PrismaForeignKeyError`, P2014 → `PrismaRelationViolationError`. Anything
+ * else (other codes, non-Prisma errors) is rethrown untouched. Never returns
+ * and takes no options.
+ *
+ * This is the safety net behind `unique()`: the Zod check is best-effort, so
+ * two concurrent requests can both pass it and one fails at the write.
+ *
+ * @example
+ * const Signup = z.object({ email: unique(z.email(), prismaUnique(prisma.user, "email")) })
+ * const data = await Signup.parseAsync(req.body) // parseAsync, never parse
+ * try {
+ *   await prisma.user.create({ data }).catch(handlePrismaError)
+ * } catch (e) {
+ *   if (e instanceof PrismaUniqueConstraintError) return res.status(409).json({ fields: e.fields })
+ *   throw e
+ * }
+ */
 export function handlePrismaError(err: unknown): never {
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     switch (err.code) {
@@ -23,6 +43,15 @@ export function handlePrismaError(err: unknown): never {
   throw err
 }
 
+/**
+ * Runs a query that may resolve to `null` (`findUnique`, `findFirst`) and
+ * throws `PrismaNotFoundError` instead of returning `null`. Pass a function,
+ * not a promise.
+ *
+ * @example
+ * const user = await findOrThrow(() => prisma.user.findUnique({ where: { id } }))
+ * // user is non-null here; catch PrismaNotFoundError to answer 404
+ */
 export async function findOrThrow<T>(query: () => Promise<T | null>): Promise<T> {
   const result = await query()
   if (result === null) {
@@ -47,6 +76,15 @@ type WhereOf<M extends FindFirstModel> = NonNullable<
   NonNullable<Parameters<M["findFirst"]>[0]>["where"]
 >
 
+/**
+ * Options of `prismaUnique` and `prismaUniqueComposite`.
+ *
+ * @example
+ * // model whose primary key is not `id`
+ * prismaUnique(prisma.account, "email", { primaryKey: "uuid" })
+ * // composite primary key
+ * prismaUnique(prisma.membership, "slug", { primaryKey: ["orgId", "userId"] })
+ */
 export type PrismaUniqueOptions<M extends FindFirstModel> = {
   /**
    * Field(s) identifying the record being edited. When the parsed value
@@ -87,11 +125,29 @@ function implicitExclude(
 }
 
 /**
- * Check fn for `unique()`. Accepts either the bare field value
- * (`unique(z.email(), prismaUnique(prisma.user, "email"))`) or an object that
- * contains it (`unique(z.object({ id, email }), prismaUnique(prisma.user, "email"))`).
- * In object form the issue is reported at `[field]`, and if the object carries
- * the primary key the matching record is excluded automatically.
+ * Check fn for `unique()`: resolves `true` when no row of `model` has this
+ * value in `field`. Accepts either the bare field value or an object that
+ * contains it. In object form the issue is reported at `[field]`, and if the
+ * object carries the primary key (default `"id"`) that record is excluded, so
+ * saving a record with its own value is not a conflict.
+ *
+ * Returns `true` without querying when the value is absent, `null` or a plain
+ * object. Best-effort: pair the write with `handlePrismaError`.
+ *
+ * @example
+ * // create: validate the field
+ * const Signup = z.object({ email: unique(z.email(), prismaUnique(prisma.user, "email")) })
+ * const data = await Signup.parseAsync(req.body) // parseAsync, never parse
+ * await prisma.user.create({ data }).catch(handlePrismaError)
+ *
+ * @example
+ * // update: validate the object and merge the route id in, so the record excludes itself
+ * const Update = unique(
+ *   z.object({ id: z.number(), email: z.email() }),
+ *   prismaUnique(prisma.user, "email"),
+ * )
+ * const { id, ...data } = await Update.parseAsync({ ...req.body, id: Number(req.params.id) })
+ * await prisma.user.update({ where: { id }, data }).catch(handlePrismaError)
  */
 export function prismaUnique<M extends FindFirstModel>(
   model: M,
@@ -115,8 +171,23 @@ export function prismaUnique<M extends FindFirstModel>(
 }
 
 /**
- * Check fn for `uniqueComposite()`. The value is the object holding `fields`;
- * if it also carries the primary key, that record is excluded automatically.
+ * Check fn for `uniqueComposite()`: resolves `true` when no row of `model`
+ * has this combination of `fields`. `fields` is an array, never a
+ * comma-joined string. The value is the object holding them; if it also
+ * carries the primary key (default `"id"`), that record is excluded.
+ *
+ * The issue is reported at the object root; pass `{ path: ["postId"] }` to
+ * `uniqueComposite` to attach it to a field. Best-effort: pair the write with
+ * `handlePrismaError`.
+ *
+ * @example
+ * const Like = uniqueComposite(
+ *   z.object({ userId: z.number(), postId: z.number() }),
+ *   prismaUniqueComposite(prisma.like, ["userId", "postId"]),
+ *   { message: "Already liked", path: ["postId"] },
+ * )
+ * const data = await Like.parseAsync(req.body) // parseAsync, never parse
+ * await prisma.like.create({ data }).catch(handlePrismaError)
  */
 export function prismaUniqueComposite<M extends FindFirstModel>(
   model: M,

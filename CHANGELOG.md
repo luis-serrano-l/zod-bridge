@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Typed error messages now name the fix after the problem (`<problem>. Fix: <what to do>.`), and
+  say to inspect `error.cause.meta` when the fields could not be read. The problem prefix is
+  unchanged (`Unique constraint failed on: email`); code comparing `message` for equality must
+  switch to `instanceof` / `code`.
+
+### Added
+
+- JSDoc with `@example` on every public export, shipped in the `.d.ts`.
+
 ## [0.1.0] - 2026-11-12
 
 First release.
