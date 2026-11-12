@@ -22,6 +22,8 @@ Long-form docs live elsewhere; do not duplicate them here:
 
 ```bash
 npm run build            # tsup → dist/ (ESM only, .d.ts bundled)
+npm run lint             # biome check: format + lint for *.ts and *.json (config: biome.json)
+npm run format           # same, applying safe fixes
 npm run typecheck        # tsc --noEmit -p tsconfig.test.json: src + tests, strict
 npm test                 # vitest run — unit + integration (integration needs Docker)
 npm run test:unit        # tests/*.test.ts — no DB, no Docker, fast
@@ -34,7 +36,7 @@ cd examples/demo && docker compose up --build --abort-on-container-exit && docke
 
 Requirements: Node ≥ 22.12 (`engines`), Docker for integration tests and the demo.
 
-Before committing: `npm run typecheck && npm run test:unit`. Run `npm test` if you touched
+Before committing: `npm run lint && npm run typecheck && npm run test:unit`. Run `npm test` if you touched
 `src/adapters/prisma/errors.ts`, `prisma/schema.prisma`, or anything under `tests/integration/`.
 
 ## Layout
@@ -157,7 +159,7 @@ Prisma 7 specifics used here:
 
 ## CI and release
 
-- `test.yml` — on push to `main` and every PR. `unit` job: typecheck + unit tests + `npm run build` +
+- `test.yml` — on push to `main` and every PR. `unit` job: lint + typecheck + unit tests + `npm run build` +
   `npm pack --dry-run` on Node 22 and 24.
   `integration` job: Node 22, Docker available on the runner.
 - `compat.yml` — weekly (Monday 06:00 UTC) and manual: installs the latest `prisma`,
@@ -181,7 +183,7 @@ Prisma 7 specifics used here:
 - ESM only, `verbatimModuleSyntax`: use `import type` for types and `.js` extensions on relative imports.
 - `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` are on; index with `?.["key"]` and
   don't assign `undefined` to optional props.
-- No semicolons, double quotes, 2-space indent (match existing files; there is no linter configured).
+- No semicolons, double quotes, 2-space indent (enforced by Biome, `npm run lint`; Markdown and YAML are not formatted by it).
 - Commit messages: conventional prefixes (`feat:`, `fix:`, `docs:`, `test:`, `chore:`).
 
 ## Status

@@ -3,11 +3,11 @@ import { PrismaClient } from "@prisma/client"
 import { z } from "zod"
 import { unique, uniqueComposite } from "zod-bridge"
 import {
+  findOrThrow,
+  handlePrismaError,
   PrismaForeignKeyError,
   PrismaNotFoundError,
   PrismaUniqueConstraintError,
-  findOrThrow,
-  handlePrismaError,
   prismaUnique,
   prismaUniqueComposite,
 } from "zod-bridge/prisma"
@@ -80,9 +80,13 @@ async function main(): Promise<void> {
   )
   code(`unique(z.object({ id, email }), prismaUnique(prisma.user, "email"))`)
   const own = await UserSchema.safeParseAsync({ id: alice.id, email: "alice@example.com" })
-  ok(`{ id: ${alice.id}, email: "alice@example.com" } → ${own.success ? "valid (own row excluded)" : "invalid"}`)
+  ok(
+    `{ id: ${alice.id}, email: "alice@example.com" } → ${own.success ? "valid (own row excluded)" : "invalid"}`,
+  )
   const other = await UserSchema.safeParseAsync({ id: alice.id + 1, email: "alice@example.com" })
-  caught(`{ id: ${alice.id + 1}, email: "alice@example.com" } → ${yellow(other.error?.issues[0]?.message ?? "")} at ${JSON.stringify(other.error?.issues[0]?.path)}`)
+  caught(
+    `{ id: ${alice.id + 1}, email: "alice@example.com" } → ${yellow(other.error?.issues[0]?.message ?? "")} at ${JSON.stringify(other.error?.issues[0]?.path)}`,
+  )
 
   // 4 ---------------------------------------------------------------------------
   section("uniqueComposite(): multi-column unique constraints")
@@ -95,9 +99,13 @@ async function main(): Promise<void> {
     prismaUniqueComposite(prisma.like, ["userId", "postId"]),
     "Already liked this post",
   )
-  code(`uniqueComposite(z.object({ userId, postId }), prismaUniqueComposite(prisma.like, ["userId", "postId"]))`)
+  code(
+    `uniqueComposite(z.object({ userId, postId }), prismaUniqueComposite(prisma.like, ["userId", "postId"]))`,
+  )
   const again = await LikeSchema.safeParseAsync({ userId: alice.id, postId: post.id })
-  caught(`{ userId: ${alice.id}, postId: ${post.id} } → ${yellow(again.error?.issues[0]?.message ?? "")}`)
+  caught(
+    `{ userId: ${alice.id}, postId: ${post.id} } → ${yellow(again.error?.issues[0]?.message ?? "")}`,
+  )
 
   // 5 ---------------------------------------------------------------------------
   section("PrismaForeignKeyError: P2003")
@@ -126,7 +134,9 @@ async function main(): Promise<void> {
   // 7 ---------------------------------------------------------------------------
   section("Race condition: Zod check is UX, handlePrismaError is the safety net")
   const RaceSchema = unique(z.email(), prismaUnique(prisma.user, "email"), "Email already taken")
-  code(`// two requests validate the same email at the same instant — both pass, nothing inserted yet`)
+  code(
+    `// two requests validate the same email at the same instant — both pass, nothing inserted yet`,
+  )
   const [a, b] = await Promise.all([
     RaceSchema.safeParseAsync("race@example.com"),
     RaceSchema.safeParseAsync("race@example.com"),
@@ -152,7 +162,9 @@ async function main(): Promise<void> {
   const results = await Promise.all([insert("request A"), insert("request B")])
   for (const r of results) console.log(`   ${r}`)
 
-  console.log(`\n${green(bold("Done."))} ${dim("All errors above were typed — no magic string codes.")}\n`)
+  console.log(
+    `\n${green(bold("Done."))} ${dim("All errors above were typed — no magic string codes.")}\n`,
+  )
 }
 
 main()

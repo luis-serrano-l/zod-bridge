@@ -1,13 +1,13 @@
 import { Prisma } from "@prisma/client"
 import { describe, expect, it, vi } from "vitest"
 import {
+  findOrThrow,
+  handlePrismaError,
   PrismaBridgeError,
   PrismaForeignKeyError,
   PrismaNotFoundError,
   PrismaRelationViolationError,
   PrismaUniqueConstraintError,
-  findOrThrow,
-  handlePrismaError,
   prismaUnique,
   prismaUniqueComposite,
 } from "../src/adapters/prisma/index.js"

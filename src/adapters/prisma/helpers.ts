@@ -38,7 +38,7 @@ export async function findOrThrow<T>(query: () => Promise<T | null>): Promise<T>
 
 type FindFirstModel = {
   // Prisma generates model-specific types; `any` is required for structural compatibility.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: see above
   findFirst(args?: { where?: any }): Promise<unknown>
 }
 

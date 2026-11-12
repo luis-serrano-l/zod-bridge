@@ -25,6 +25,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.test.json",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
+    "lint": "biome check .",
+    "format": "biome check --write .",
     "db:push": "prisma db push"
   },
   "keywords": [
@@ -63,6 +65,7 @@
     }
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.7",
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
     "@testcontainers/postgresql": "^11.14.0",

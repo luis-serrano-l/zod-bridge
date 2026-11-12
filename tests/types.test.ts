@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { z } from "zod"
-import { unique } from "../src/index.js"
 import { prismaUnique, prismaUniqueComposite } from "../src/adapters/prisma/index.js"
+import { unique } from "../src/index.js"
 
 // Compile-time checks: `npm run typecheck` fails if a `@ts-expect-error` line stops erroring.
 type UserWhere = { id?: number; email?: string; tenantId?: number }

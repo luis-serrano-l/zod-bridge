@@ -1,5 +1,5 @@
-import { z } from "zod"
 import { describe, expect, it, vi } from "vitest"
+import { z } from "zod"
 import { unique, uniqueComposite } from "../src/core/index.js"
 
 describe("core", () => {
@@ -63,7 +63,11 @@ describe("core", () => {
       vi.fn(async (_val: { id?: number | undefined; email: string }) => false),
       { path: ["email"] },
     )
-    const schema = unique(z.object({ id: z.number().optional(), email: z.string() }), check, "Taken")
+    const schema = unique(
+      z.object({ id: z.number().optional(), email: z.string() }),
+      check,
+      "Taken",
+    )
 
     const result = await schema.safeParseAsync({ email: "a@b.c" })
     expect(result.success).toBe(false)

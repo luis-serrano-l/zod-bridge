@@ -1,16 +1,16 @@
 import { PrismaPg } from "@prisma/adapter-pg"
 import { PrismaClient } from "@prisma/client"
-import { z, ZodError } from "zod"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
-import { unique, uniqueComposite } from "../../src/core/index.js"
+import { ZodError, z } from "zod"
 import {
+  findOrThrow,
+  handlePrismaError,
   PrismaForeignKeyError,
   PrismaNotFoundError,
   PrismaUniqueConstraintError,
-  findOrThrow,
-  handlePrismaError,
   prismaUnique,
 } from "../../src/adapters/prisma/index.js"
+import { unique, uniqueComposite } from "../../src/core/index.js"
 
 let prisma: PrismaClient
 
@@ -29,7 +29,7 @@ beforeEach(async () => {
 })
 
 describe("P2002 — single field unique (real Postgres meta shape)", () => {
-  it("fields is [\"email\"] on Postgres", async () => {
+  it('fields is ["email"] on Postgres', async () => {
     await prisma.user.create({ data: { email: "a@b.com" } })
 
     let caught: unknown

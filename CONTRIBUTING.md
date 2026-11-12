@@ -24,7 +24,7 @@ npx vitest run tests/prisma.test.ts   # single file
 
 ## Before committing
 
-Run `npm run typecheck && npm run test:unit`. Also run `npm test` if you touched
+Run `npm run lint && npm run typecheck && npm run test:unit` (`npm run format` applies fixes). Also run `npm test` if you touched
 `src/adapters/prisma/errors.ts`, `prisma/schema.prisma`, or anything under `tests/integration/`.
 
 ## Code style
