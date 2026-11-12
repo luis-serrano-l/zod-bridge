@@ -306,66 +306,6 @@ Publish to npm as `0.1.0` when:
 
 ---
 
-## Phase 2 — GitHub Activity: Comment + PR
-
-Do this after Phase 1 is published on npm, not before.
-
-### Step 1 — Comment on the Prisma issue
-
-Link: `https://github.com/prisma/prisma/issues/18871`
-
-Comment should:
-- Mention you built a package solving this today
-- Link to the npm package and README
-- Keep it short, let the package speak for itself
-- Not ask for permission or validation
-
-### Step 2 — Open the Prisma PR
-
-After the comment gets some response:
-- PR implements the typed error enum natively in Prisma
-- PR description links your package as proof the API works
-- Frame: "here is the implementation, the package proves the API is useful"
-
-### Step 3 — Comment on related issues
-
-Search Prisma and Zod issues for:
-- `meta.target` not being typed
-- `P2002` magic string complaints
-- Async uniqueness validation in Zod
-
-Same approach — working package first, comment second.
-
-### Step 4 — Distribution beyond GitHub
-
-GitHub alone is too narrow. Also:
-- Blog post explaining the gap and the solution
-- r/typescript and r/nextjs posts
-- Stack Overflow answers on relevant questions
-- Mention in the Prisma Discord
-- Twitter/X thread tagging Prisma and Theo (covered this exact pain point)
-- Submit to JavaScript Weekly and Node Weekly newsletters
-
-### PR rejection contingency
-
-If Prisma closes the PR with "won't fix": that's fine, your package is the
-answer. Update the README to note Prisma rejected the native solution and
-this is the canonical workaround. A rejection is not a failure — it
-strengthens the package's reason to exist.
-
-### Checklist
-
-- [ ] Comment on prisma/prisma#18871
-- [ ] Open Prisma typed-errors PR
-- [ ] Comment on related Prisma/Zod issues
-- [ ] Blog post
-- [ ] r/typescript + r/nextjs posts
-- [ ] Prisma Discord mention
-- [ ] Twitter/X thread
-- [ ] Submit to JS Weekly + Node Weekly
-
----
-
 ## Phase 3 — Build: Zod Extension
 
 Build after Phase 1 has real users. Adoption validates the audience.
@@ -486,31 +426,19 @@ safer path if DMMF coverage proves incomplete.
 
 ---
 
-## Handling the Prisma PR outcome
+## If Prisma ships native typed errors
 
-### If Prisma merges the typed errors PR
-
-Update `src/internal/error-adapter.ts` to prefer Prisma's native types:
+Typed errors are a long-standing Prisma request (prisma/prisma#18871). If they land,
+`src/internal/error-adapter.ts` is the single place to switch to them:
 
 ```ts
-// Before merge
-export { OurUniqueConstraintError as PrismaUniqueConstraintError }
+// Today
+export { PrismaUniqueConstraintError } from "../adapters/prisma/errors.js"
 
-// After merge — one file change, zero breaking changes for users
-export { Prisma.PrismaUniqueConstraintError }
+// If Prisma exports its own class: one file change, no breaking change for users
 ```
 
-Release as a minor version, not breaking. Update README to note Phase 1
-now delegates to Prisma core. The package continues as the Zod bridge,
-which Prisma will never own.
-
-### If Prisma never merges the PR
-
-Nothing changes. Your package is the de facto solution. The issue comment
-continues driving installs. The PR stays open as a reference.
-
-Either outcome, the Zod bridge (Phases 3 and 4) is the permanent value of
-the package. Prisma will never own that.
+That would ship as a minor version. The Zod side (Phases 3 and 4) is unaffected either way.
 
 ---
 
@@ -545,10 +473,7 @@ const EmailSchema = unique(
 | Phase 0.5 complete | ✅ | All design decisions documented in DECISIONS.md |
 | Real-project test | ⬜ | Install via `npm link` in a real project, validate API feel |
 | Phase 1 complete | ✅ built, not yet published | Real-project test done, published as `0.1.0` on npm |
-| GitHub comment | ⬜ | Phase 1 published, README is solid, examples exist |
-| Prisma PR | ⬜ | Comment gets engagement |
-| Distribution push | ⬜ | Blog, Reddit, Twitter, Discord, Stack Overflow |
-| Phase 3 complete | ✅ built | Phase 1 has real installs, Zod extension stable |
+| Phase 3 complete | ✅ built | Zod extension stable |
 | Phase 4 complete | ⬜ | Schema bridge tested with real apps |
 
 ---
@@ -575,7 +500,6 @@ Claude Code works best on this project when you:
 - Ask it to implement one file at a time: `"implement src/adapters/prisma/errors.ts"`
 - Ask it to write tests before implementation: `"write tests for handlePrismaError"`
 - Ask it to check the Prisma error reference before implementing error classes
-- Use it to draft the GitHub comment, PR description, and blog post
-- Ask it to update `error-adapter.ts` if Prisma merges the typed errors PR
+- Ask it to update `error-adapter.ts` if Prisma ships native typed errors
 - Ask it to scaffold the GitHub Actions workflows in Phase 0
 - Ask it to generate the example apps after Phase 1 is feature complete
