@@ -32,7 +32,13 @@
     "prisma",
     "validation",
     "typescript",
-    "async"
+    "async",
+    "zod-v4",
+    "unique",
+    "uniqueness",
+    "prisma-errors",
+    "error-handling",
+    "async-validation"
   ],
   "author": "",
   "repository": {

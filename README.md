@@ -277,6 +277,21 @@ try {
 const user = await findOrThrow(() => prisma.user.findUnique({ where: { id } }))
 ```
 
+### Recipe: map errors to HTTP responses once
+
+Call `handlePrismaError` in your handlers and translate the typed errors in one place
+(Express shown; the same shape works in any framework):
+
+```ts
+app.use((err, req, res, next) => {
+  if (err instanceof z.ZodError) return res.status(400).json({ issues: err.issues })
+  if (err instanceof PrismaUniqueConstraintError) return res.status(409).json({ fields: err.fields })
+  if (err instanceof PrismaForeignKeyError) return res.status(422).json({ field: err.fieldName })
+  if (err instanceof PrismaNotFoundError) return res.status(404).end()
+  next(err)
+})
+```
+
 ## Race conditions
 
 The check and the write are two operations with a gap between them, so two concurrent requests can
