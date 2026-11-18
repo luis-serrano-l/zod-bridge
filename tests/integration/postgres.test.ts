@@ -14,7 +14,7 @@ import {
   toZodIssues,
 } from "../../src/adapters/prisma/index.js"
 import { unique, uniqueComposite } from "../../src/core/index.js"
-import { LikeModel, UserModel } from "../generated/zod-bridge.js"
+import { EventModel, LikeModel, UserModel } from "../generated/zod-bridge.js"
 
 let prisma: PrismaClient
 
@@ -315,7 +315,7 @@ describe("createSchema — generated descriptors against real Postgres", () => {
   it('mode "update": the record excludes itself through the generated primary key', async () => {
     const one = await prisma.user.create({ data: { email: "one@b.com" } })
     await prisma.user.create({ data: { email: "two@b.com" } })
-    const UserPatch = createSchema(prisma.user, UserModel, { mode: "update" })
+    const UserPatch = createSchema(prisma.user, UserModel, { mode: "update", omit: [] })
 
     await expect(UserPatch.parseAsync({ id: one.id, email: "one@b.com" })).resolves.toEqual({
       id: one.id,
@@ -328,6 +328,7 @@ describe("createSchema — generated descriptors against real Postgres", () => {
 
   it("composite constraint: pre-check and database error agree", async () => {
     const LikeSchema = createSchema(prisma.like, LikeModel, {
+      pick: ["userId", "postId"],
       unique: [{ fields: ["userId", "postId"], message: "Already liked", path: ["postId"] }],
     })
     await prisma.like.create({ data: await LikeSchema.parseAsync({ userId: 1, postId: 2 }) })
@@ -356,5 +357,24 @@ describe("createSchema — generated descriptors against real Postgres", () => {
       caught = e
     }
     expect(NoEmail.toZodIssues(caught)).toBeUndefined()
+  })
+
+  it("DateTime: accepts what Prisma accepts (Date, ISO string with Z or offset) and outputs a Date", async () => {
+    const EventSchema = createSchema(prisma.event, EventModel, { pick: ["startsAt"] })
+    const instant = new Date("2026-11-18T10:00:00.000Z")
+
+    for (const startsAt of [instant, "2026-11-18T10:00:00Z", "2026-11-18T12:00:00+02:00"]) {
+      const data = await EventSchema.parseAsync({ startsAt })
+      expect(data.startsAt).toEqual(instant)
+      // the raw input is accepted by Prisma too: the schema is not stricter than the database layer
+      const stored = await prisma.event.create({ data: { startsAt } })
+      expect(stored.startsAt).toEqual(instant)
+    }
+
+    for (const startsAt of ["2026-11-18T10:00:00", "2026-11-18", 1795000000000, null]) {
+      expect((await EventSchema.safeParseAsync({ startsAt })).success).toBe(false)
+      // ...and not looser: Prisma refuses each of these
+      await expect(prisma.event.create({ data: { startsAt: startsAt as never } })).rejects.toThrow()
+    }
   })
 })

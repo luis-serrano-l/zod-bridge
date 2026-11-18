@@ -83,8 +83,9 @@ export const LikeModel = defineModel({
     const committed = await readFile(new URL("./generated/zod-bridge.ts", import.meta.url), "utf8")
     const emitted = emitModels(datamodel, { importPath: "../../src/adapters/prisma/index.js" })
     const [header = "", user = "", like = ""] = emitted.split("\n\n")
-    expect(committed.startsWith(`${header}\n\n${user}\n\n`)).toBe(true)
-    expect(committed.endsWith(`\n\n${like}`)).toBe(true)
+    expect(committed.startsWith(`${header}\n\n`)).toBe(true)
+    expect(committed).toContain(`\n\n${user}\n\n`)
+    expect(committed).toContain(`\n\n${like.trimEnd()}\n`)
   })
 
   it("maps every scalar, enums, lists, nullable and defaulted fields; skips relations and Unsupported", () => {
@@ -152,8 +153,8 @@ export const LikeModel = defineModel({
     views: z.bigint(),
     score: z.number(),
     active: z.boolean(),
-    createdAt: z.date().optional(),
-    updatedAt: z.date().optional(),
+    createdAt: dateTime.optional(),
+    updatedAt: dateTime.optional(),
     settings: z.json(),
     avatar: z.instanceof(Uint8Array),
   },
@@ -163,6 +164,27 @@ export const LikeModel = defineModel({
     email: "email_address",
   },
 })`)
+  })
+
+  it("defines dateTime once, after the imports, only when a model has a DateTime column", () => {
+    expect(emitModels(datamodel)).not.toContain("dateTime")
+    const source = emitModels({
+      models: ["A", "B"].map((name) => ({
+        name,
+        fields: [{ name: "at", kind: "scalar", type: "DateTime", isRequired: true }],
+      })),
+    })
+    expect(source.split("const dateTime = ")).toHaveLength(2)
+    expect(source).toContain(`import { defineModel } from "zod-bridge/prisma"
+
+// DateTime: a Date, or an ISO 8601 string with Z or an offset, as Prisma accepts. Output: Date.
+const dateTime = z.union([
+  z.date(),
+  z.iso.datetime({ offset: true }).transform((value) => new Date(value)),
+])
+
+export const AModel = defineModel({`)
+    expect(source).toContain("    at: dateTime,\n")
   })
 
   it("emits one constraint when @unique and @@unique name the same fields", () => {

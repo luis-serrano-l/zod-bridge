@@ -403,8 +403,8 @@ import { createSchema } from "zod-bridge/prisma"
 import { UserModel } from "./prisma/generated/zod-bridge"
 
 const UserSchema = createSchema(prisma.user, UserModel, {
+  pick: ["email"],
   fields: { email: z.email() },
-  omit: ["id"],
   unique: [{ fields: ["email"], message: "Email already taken" }],
 })
 ```
@@ -412,7 +412,7 @@ const UserSchema = createSchema(prisma.user, UserModel, {
 `createSchema` wires up:
 - The model shape as the base, from a descriptor the generator writes at `prisma generate` time
   (`Prisma.dmmf` at runtime lacks types, keys and constraints).
-- Your Zod overrides merged on top (`fields`), column selection (`pick` / `omit`).
+- Your Zod overrides merged on top (`fields`), column selection (`pick` or `omit`, one is required).
 - A uniqueness check per `@unique` / `@@unique`, excluding the record being edited through the
   model's real primary key; `mode: "update"` for partial updates.
 - `schema.toZodIssues(err)` as the catch layer for race conditions.

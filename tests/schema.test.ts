@@ -48,7 +48,7 @@ const AccountModel = defineModel({
 
 describe("createSchema", () => {
   it("parses the generated create shape and strips unknown keys", async () => {
-    const User = createSchema(delegate("User"), UserModel)
+    const User = createSchema(delegate("User"), UserModel, { omit: [] })
     await expect(User.parseAsync({ email: "a@b.com", admin: true })).resolves.toEqual({
       email: "a@b.com",
     })
@@ -58,12 +58,13 @@ describe("createSchema", () => {
   })
 
   it("requires parseAsync", () => {
-    const User = createSchema(delegate("User"), UserModel)
+    const User = createSchema(delegate("User"), UserModel, { omit: [] })
     expect(() => User.parse({ email: "a@b.com" })).toThrow()
   })
 
   it("fields override and add to the generated shape", async () => {
     const User = createSchema(delegate("User"), UserModel, {
+      omit: [],
       fields: { email: z.email(), password: z.string().min(8) },
     })
     const result = await User.safeParseAsync({ email: "nope", password: "short" })
@@ -80,7 +81,7 @@ describe("createSchema", () => {
 
   it("wires a uniqueness check for every unique constraint, with defaults equal to unique()", async () => {
     const model = delegate("User", [{ id: 1, email: "taken@b.com" }])
-    const User = createSchema(model, UserModel)
+    const User = createSchema(model, UserModel, { omit: [] })
     const byHand = unique(z.object({ email: z.string() }), prismaUnique(model, "email"))
 
     const result = await User.safeParseAsync({ email: "taken@b.com" })
@@ -95,7 +96,10 @@ describe("createSchema", () => {
 
   it("does not query for a value that already failed validation", async () => {
     const model = delegate("User")
-    const User = createSchema(model, UserModel, { fields: { email: z.email() } })
+    const User = createSchema(model, UserModel, {
+      omit: [],
+      fields: { email: z.email() },
+    })
     await User.safeParseAsync({ email: "not-an-email" })
     expect(model.findFirst).not.toHaveBeenCalled()
   })
@@ -105,6 +109,7 @@ describe("createSchema", () => {
       { uuid: "u1", email: "a@b.com", handle: "ada", tenantId: 1, slug: "home" },
     ])
     const Account = createSchema(model, AccountModel, {
+      omit: [],
       unique: [
         { fields: ["email"], message: "Email taken" },
         { fields: ["slug", "tenantId"], message: "Slug taken", path: ["slug"] },
@@ -128,7 +133,7 @@ describe("createSchema", () => {
     const model = delegate("Account", [
       { uuid: "u1", email: "a@b.com", handle: "ada", tenantId: 1, slug: "home" },
     ])
-    const Account = createSchema(model, AccountModel)
+    const Account = createSchema(model, AccountModel, { omit: [] })
     const own = { uuid: "u1", email: "a@b.com", handle: "ada", tenantId: 1, slug: "home" }
     await expect(Account.parseAsync(own)).resolves.toEqual(own)
     expect(model.findFirst).toHaveBeenCalledWith({
@@ -144,7 +149,7 @@ describe("createSchema", () => {
       { id: 1, email: "one@b.com" },
       { id: 2, email: "two@b.com" },
     ])
-    const Patch = createSchema(model, UserModel, { mode: "update" })
+    const Patch = createSchema(model, UserModel, { mode: "update", omit: [] })
 
     await expect(Patch.parseAsync({ id: 1 })).resolves.toEqual({ id: 1 })
     expect(model.findFirst).not.toHaveBeenCalled()
@@ -184,8 +189,16 @@ describe("createSchema", () => {
     ).toThrow(/no unique constraint/)
   })
 
+  it("throws without pick or omit (JavaScript callers), naming the fix", () => {
+    const untyped = createSchema as (...args: unknown[]) => unknown
+    expect(() => untyped(delegate("User"), UserModel)).toThrow(/neither pick nor omit.*Fix:/)
+    expect(() => untyped(delegate("User"), UserModel, { mode: "update" })).toThrow(
+      /neither pick nor omit/,
+    )
+  })
+
   it("throws at build time on a delegate / descriptor mismatch, naming the fix", () => {
-    expect(() => createSchema(delegate("Post"), UserModel)).toThrow(
+    expect(() => createSchema(delegate("Post"), UserModel, { omit: [] })).toThrow(
       /"Post" delegate with the "User" descriptor\. Fix:/,
     )
   })
@@ -193,7 +206,10 @@ describe("createSchema", () => {
   it("throws at build time on a unique rule that matches no constraint of the schema", () => {
     const model = delegate("Account")
     expect(() =>
-      createSchema(model, AccountModel, { unique: [{ fields: ["emial"], message: "x" }] }),
+      createSchema(model, AccountModel, {
+        omit: [],
+        unique: [{ fields: ["emial"], message: "x" }],
+      }),
     ).toThrow(/no unique constraint on \[emial\].*Fix:/)
     expect(() =>
       createSchema(model, AccountModel, { omit: ["email"], unique: [{ fields: ["email"] }] }),
@@ -204,6 +220,7 @@ describe("createSchema", () => {
 describe("createSchema().toZodIssues — the race window reports what the pre-check reports", () => {
   const taken = { uuid: "u1", email: "a@b.com", handle: "ada", tenantId: 1, slug: "home" }
   const options = {
+    omit: [],
     unique: [
       { fields: ["email"], message: "Email taken" },
       { fields: ["tenantId", "slug"], message: "Slug taken", path: ["slug"] },
@@ -256,7 +273,7 @@ describe("createSchema().toZodIssues — the race window reports what the pre-ch
 
   it("composite constraint of a model without primary key reports at the root", async () => {
     const model = delegate("Like", [{ userId: 1, postId: 2 }])
-    const Like = createSchema(model, LikeModel)
+    const Like = createSchema(model, LikeModel, { omit: [] })
     const refine = await Like.safeParseAsync({ userId: 1, postId: 2 })
     expect(refine.error?.issues).toEqual([
       { code: "custom", message: "Value already taken", path: [] },

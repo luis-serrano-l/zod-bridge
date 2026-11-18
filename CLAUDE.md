@@ -66,7 +66,7 @@ tests/
   generated/zod-bridge.ts             # generator output for prisma/schema.prisma, committed (generate:models)
   integration/postgres.test.ts        # real Postgres
   integration/setup.ts                # vitest globalSetup: starts container, runs db push
-prisma/schema.prisma, prisma.config.ts  # test schema: User (unique email), Post (FK), Like (composite unique)
+prisma/schema.prisma, prisma.config.ts  # test schema: User (unique email), Post (FK), Like (composite unique), Event (DateTime)
 scripts/generate-test-models.mjs      # runs the built generator on prisma/schema.prisma + a temp generator block
 examples/demo/                # dockerized consumer app; installs the lib from a packed tarball
 .github/workflows/            # test.yml, compat.yml, publish.yml
@@ -127,19 +127,22 @@ prismaUniqueComposite(model, fields, { primaryKey? })   // check fn for uniqueCo
 
 // zod-bridge/prisma — schema bridge
 defineModel({ name, shape, primaryKey, unique, columns? })   // called by the generated file only
-createSchema(model, descriptor, { fields?, pick?, omit?, mode?: "create" | "update", unique?: { fields, message?, path? }[] })
+createSchema(model, descriptor, { pick | omit (one required), fields?, mode?: "create" | "update", unique?: { fields, message?, path? }[] })
 // → z.object(...) of the selected fields with one object-level unique() per @unique/@@unique whose
 // fields the schema holds (primaryKey from the descriptor, never the "id" convention), plus
 // schema.toZodIssues(err): toZodIssues with a `fields` guard per constraint (@map column names),
 // undefined for a constraint the schema does not validate. mode "update": primary key required
 // (unwrapped from .optional()), everything else optional. Throws at build time on a delegate /
-// descriptor mismatch ($name) and on a `unique` rule that matches no constraint of the schema.
+// descriptor mismatch ($name), on a `unique` rule that matches no constraint of the schema, and
+// when neither pick nor omit is given (also a type error; `omit: []` means every column).
 
 // Prisma generator (schema.prisma): generator zodBridge { provider = "zod-bridge" }
 // options: output (a .ts file, default ./generated/zod-bridge.ts next to the schema), importPath
 // (default "zod-bridge/prisma"). Emits `export const <Model>Model = defineModel({...})` per model:
 // create-input shape (defaults → .optional(), nullable → .nullish(), lists → z.array().optional(),
 // relations and Unsupported skipped), primaryKey ([] if none), unique groups, columns for @map.
+// DateTime → a file-level `dateTime` const (emitted only when used): Date or ISO 8601 string with
+// Z / offset in, Date out. That is exactly what Prisma accepts; do not loosen it to z.coerce.date().
 ```
 
 `handlePrismaError` takes **no options object**. A per-constraint message map was considered and
@@ -164,6 +167,8 @@ dropped (see DECISIONS.md); Phase 4's `createSchema` is where that translation b
 - **Prisma exposes no primary-key info at runtime.** `Prisma.dmmf.datamodel` fields carry only
   `name`/`kind`/`type` in Prisma 7; the `.d.ts` declares `isId`/`primaryKey` but they are
   `undefined`. That is why `primaryKey` is a convention (`"id"`) with an option, not derived.
+- **`createSchema` has no "every column" default.** `pick` or `omit` is required (types + a
+  build-time throw). Examples lead with `pick`; never show a call without one of them.
 - **`createSchema` cannot be reshaped afterwards.** Zod throws on `.pick()` / `.omit()` of an
   object with refinements, and `toZodIssues` lives only on the returned instance. Selection goes
   through the `pick` / `omit` options; do not document `UserSchema.omit(...)`.
@@ -221,7 +226,8 @@ Prisma 7 specifics used here:
   `npm pack --dry-run` on Node 22 and 24.
   `integration` job: Node 22, Docker available on the runner.
 - `compat.yml` — weekly (Monday 06:00 UTC) and manual: installs the latest `prisma`,
-  `@prisma/client`, `@prisma/adapter-pg` and `zod` over the lockfile and runs typecheck + full tests.
+  `@prisma/client`, `@prisma/adapter-pg` and `zod` over the lockfile and runs typecheck + full tests,
+  then builds and runs the generator through that `prisma generate` (the hand-written protocol).
   A red run usually means a new error `meta` shape (see the `prisma-error-shape` skill).
 - `dependabot.yml` — weekly npm (dev deps grouped; majors of the pinned packages ignored) and
   GitHub Actions updates. Actions are pinned to commit SHAs; `test.yml`/`compat.yml` run with

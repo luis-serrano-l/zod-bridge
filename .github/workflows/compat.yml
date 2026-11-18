@@ -29,3 +29,7 @@ jobs:
       - run: npx prisma generate
       - run: npm run typecheck
       - run: npm test
+      # the generator speaks Prisma's protocol by hand: run it through the newest `prisma generate`
+      - run: npm run build
+      - name: Generator works with the latest Prisma
+        run: node scripts/generate-test-models.mjs && git diff --exit-code tests/generated

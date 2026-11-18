@@ -49,6 +49,19 @@ export const DEFAULT_IMPORT_PATH = "zod-bridge/prisma"
 
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/
 
+/**
+ * `DateTime` accepts what Prisma accepts: a `Date`, or an ISO 8601 string with
+ * `Z` or an offset (what JSON carries). The output is always a `Date`. Emitted
+ * once per file, only when a model has a `DateTime` column.
+ */
+const DATE_TIME = [
+  "// DateTime: a Date, or an ISO 8601 string with Z or an offset, as Prisma accepts. Output: Date.",
+  "const dateTime = z.union([",
+  "  z.date(),",
+  "  z.iso.datetime({ offset: true }).transform((value) => new Date(value)),",
+  "])",
+].join("\n")
+
 /** Zod source for each Prisma scalar: what `prisma.model.create` accepts from JSON-like input. */
 const SCALARS: Readonly<Record<string, string>> = {
   String: "z.string()",
@@ -57,7 +70,7 @@ const SCALARS: Readonly<Record<string, string>> = {
   Float: "z.number()",
   Decimal: "z.union([z.number(), z.string()])",
   Boolean: "z.boolean()",
-  DateTime: "z.date()",
+  DateTime: "dateTime",
   Json: "z.json()",
   Bytes: "z.instanceof(Uint8Array)",
 }
@@ -147,5 +160,8 @@ export function emitModels(datamodel: DmmfDatamodel, options: EmitOptions = {}):
     `import { defineModel } from ${JSON.stringify(options.importPath ?? DEFAULT_IMPORT_PATH)}`,
   ].join("\n")
   const models = datamodel.models.map((model) => modelSource(model, enums))
-  return `${[header, ...models].join("\n\n")}\n`
+  const usesDateTime = datamodel.models.some((model) =>
+    model.fields.some((field) => field.kind === "scalar" && field.type === "DateTime"),
+  )
+  return `${[header, ...(usesDateTime ? [DATE_TIME] : []), ...models].join("\n\n")}\n`
 }

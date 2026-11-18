@@ -70,13 +70,9 @@ export type CreateSchemaOptions<
   TPick extends string,
   TOmit extends string,
   TMode extends "create" | "update",
-> = {
+> = Selection<TPick, TOmit> & {
   /** Zod schemas that replace (or add to) the generated ones, by field. */
   readonly fields?: TFields
-  /** Keep only these fields. Without it every column is accepted. */
-  readonly pick?: readonly TPick[]
-  /** Drop these fields (server-set columns such as `role` or `createdAt`). */
-  readonly omit?: readonly TOmit[]
   /**
    * `"create"` (default): the generated shape. `"update"`: the primary key is
    * required and every other field optional, for partial updates.
@@ -85,6 +81,26 @@ export type CreateSchemaOptions<
   /** Message / path per unique constraint. Constraints not listed use the defaults. */
   readonly unique?: readonly UniqueRule[]
 }
+
+/**
+ * Which columns the client may send. One of the two is required, so that no
+ * schema accepts every column by accident: `pick` is an allow-list (a column
+ * added to the model later stays out), `omit` a deny-list (`omit: []` states
+ * "every column" on purpose).
+ */
+export type Selection<TPick extends string, TOmit extends string> =
+  | {
+      /** Keep only these fields. Prefer it for request bodies. */
+      readonly pick: readonly TPick[]
+      /** Drop these fields. */
+      readonly omit?: readonly TOmit[]
+    }
+  | {
+      /** Keep only these fields. Prefer it for request bodies. */
+      readonly pick?: readonly TPick[]
+      /** Drop these fields (server-set columns such as `role` or `createdAt`). */
+      readonly omit: readonly TOmit[]
+    }
 
 type Unwrapped<T> = T extends ZodOptional<infer Inner extends ZodType> ? Inner : T
 
@@ -129,9 +145,11 @@ const sameSet = (a: readonly string[], b: readonly string[]) =>
  * the same issue.
  *
  * - Requires `parseAsync` / `safeParseAsync`, like `unique()`.
- * - The base shape is the create input; `fields` overrides it, `pick` / `omit`
- *   select columns. Select here: Zod refuses `.pick()` / `.omit()` on the
- *   result, and `toZodIssues` is lost on any derived schema.
+ * - The base shape is the create input; `fields` overrides it. `pick` or
+ *   `omit` is required and selects the columns the client may send (`pick` is
+ *   the allow-list; `omit: []` accepts every column). Select here: Zod refuses
+ *   `.pick()` / `.omit()` on the result, and `toZodIssues` is lost on any
+ *   derived schema.
  * - Update exclusion uses the model's real primary key: when the parsed value
  *   carries it, that record is not a conflict. Merge the route id in before
  *   parsing. `mode: "update"` makes the key required and the rest optional.
@@ -143,8 +161,8 @@ const sameSet = (a: readonly string[], b: readonly string[]) =>
  * import { UserModel } from "./prisma/generated/zod-bridge" // written by `prisma generate`
  *
  * const UserSchema = createSchema(prisma.user, UserModel, {
+ *   pick: ["email", "name"], // only what the client may send
  *   fields: { email: z.email() },
- *   omit: ["role"],
  *   unique: [{ fields: ["email"], message: "Email already taken" }],
  * })
  *
@@ -173,13 +191,21 @@ export function createSchema<
 >(
   model: FindFirstModel,
   descriptor: ModelDescriptor<TShape, TKey>,
-  options: CreateSchemaOptions<TFields, TPick, TOmit, TMode> = {},
+  options: CreateSchemaOptions<TFields, TPick, TOmit, TMode>,
 ): z.ZodObject<AsShape<FinalShape<TShape, TKey, TFields, TPick, TOmit, TMode>>> & SchemaBridge {
   const delegateName = (model as { readonly $name?: unknown }).$name
   if (typeof delegateName === "string" && delegateName !== descriptor.name) {
     throw new Error(
       `createSchema: got the "${delegateName}" delegate with the "${descriptor.name}" descriptor. ` +
         `Fix: pass the delegate and the descriptor of the same model, e.g. createSchema(prisma.user, UserModel).`,
+    )
+  }
+
+  // Typed as required; this is for JavaScript callers and `as any`.
+  if (options?.pick === undefined && options?.omit === undefined) {
+    throw new Error(
+      `createSchema: neither pick nor omit was given for the ${descriptor.name} schema. ` +
+        `Fix: list the fields the client may send with pick: [...], or the ones it may not with omit: [...] (omit: [] accepts every column).`,
     )
   }
 

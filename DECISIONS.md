@@ -161,12 +161,23 @@ available at runtime, so a Prisma generator writes them at `prisma generate` tim
   hand-maintained type mapping.
 - **The shape is the create input**, so one descriptor serves create as is and update through
   `mode: "update"` (primary key required and unwrapped from `.optional()`, the rest optional).
-  `DateTime` is `z.date()` and not `z.coerce.date()`: coercion turns `null` into 1970 and makes the
-  input type `unknown`; an API that receives ISO strings overrides the field.
-- **Every column is included by default; `pick` / `omit` are options.** Zod throws on `.pick()` /
-  `.omit()` of an object with refinements, so selection has to happen before the checks are
-  attached. Including everything is the predictable default for a function that mirrors the model;
-  the README says to omit server-set columns.
+- **`DateTime` accepts exactly what Prisma accepts.** Measured on Prisma 7.10 + Postgres with
+  `prisma.event.create`: a `Date`, and ISO 8601 strings with `Z` or an offset are stored; a string
+  without a zone, a date-only string, a number and `null` are refused. The generated schema is
+  `z.union([z.date(), z.iso.datetime({ offset: true }).transform((v) => new Date(v))])`, defined
+  once per file as `dateTime`: same acceptance, and the output is always a `Date`. Rejected:
+  `z.date()` (refuses every string, so each date column of a JSON API needed an override),
+  `z.coerce.date()` (accepts the four inputs Prisma refuses, `null` as 1970) and a plain
+  `z.iso.datetime()` (refuses offsets Prisma stores). The integration suite pins both sides.
+- **`pick` or `omit` is required; there is no "every column" default.** A first version included
+  every column unless told otherwise, which made a later `isAdmin` column client-settable in every
+  schema. Ecto solves the same problem by making the allow-list a required argument of `cast/3`,
+  with no deny-list at all. Here either option satisfies the requirement: `pick` is the allow-list
+  and the documented default for request bodies; `omit` stays because a deny-list is still a
+  stated choice and suits admin forms that mirror the model (`omit: []` is "all, on purpose"), at
+  the known cost that a new column is exposed until listed. Enforced in the types and, for
+  JavaScript callers, with a throw at build time. Selection is an option and not a method because
+  Zod throws on `.pick()` / `.omit()` of an object with refinements.
 - **Unique checks are object-level** (`unique(z.object(...), prismaUnique(model, field, {
   primaryKey }))`), the only form in which a check can see the primary key. The key comes from the
   schema, so the `"id"` convention of `prismaUnique` is not involved. The primary key itself is not

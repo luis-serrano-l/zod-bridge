@@ -16,11 +16,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- `createSchema(model, descriptor, options?)` in `zod-bridge/prisma`: the Zod schema of a Prisma
+- `createSchema(model, descriptor, options)` in `zod-bridge/prisma`: the Zod schema of a Prisma
   model with a uniqueness check for every `@unique` / `@@unique`, update exclusion through the
   model's real primary key, and `schema.toZodIssues(err)` to report a lost race as the issue the
-  pre-check produces. Options: `fields` (overrides), `pick` / `omit`, `mode: "update"` (primary
-  key required, the rest optional) and `unique` (message / path per constraint).
+  pre-check produces. `pick` or `omit` is required: the columns the client may send are always
+  stated. Other options: `fields` (overrides), `mode: "update"` (primary key required, the rest
+  optional) and `unique` (message / path per constraint). `DateTime` columns accept a `Date` or
+  an ISO 8601 string with `Z` or an offset, and parse to a `Date`.
 - A Prisma generator (`provider = "zod-bridge"`, shipped as the package binary) that writes the
   model descriptors `createSchema` reads, and `defineModel` to type them.
 - JSDoc with `@example` on every public export, shipped in the `.d.ts`.

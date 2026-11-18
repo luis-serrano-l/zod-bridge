@@ -2,6 +2,12 @@
 import { z } from "zod"
 import { defineModel } from "../../src/adapters/prisma/index.js"
 
+// DateTime: a Date, or an ISO 8601 string with Z or an offset, as Prisma accepts. Output: Date.
+const dateTime = z.union([
+  z.date(),
+  z.iso.datetime({ offset: true }).transform((value) => new Date(value)),
+])
+
 export const UserModel = defineModel({
   name: "User",
   shape: {
@@ -30,4 +36,14 @@ export const LikeModel = defineModel({
   },
   primaryKey: [],
   unique: [["userId", "postId"]],
+})
+
+export const EventModel = defineModel({
+  name: "Event",
+  shape: {
+    id: z.int().optional(),
+    startsAt: dateTime,
+  },
+  primaryKey: ["id"],
+  unique: [],
 })

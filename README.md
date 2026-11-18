@@ -168,7 +168,7 @@ safety net for the request that loses a race (see [Race conditions](#race-condit
 | `zod-bridge/prisma` | `handlePrismaError(e)` | Rethrows a known Prisma error as a typed class, anything else untouched |
 | `zod-bridge/prisma` | `toZodIssues(e, message \| { message?, path?, fields? })` | Zod issues for a `ZodError` or a `PrismaUniqueConstraintError` (the issue `unique()` would have produced), `undefined` for anything else |
 | `zod-bridge/prisma` | `findOrThrow(() => query)` | Throws `PrismaNotFoundError` instead of returning `null` |
-| `zod-bridge/prisma` | `createSchema(model, descriptor, { fields?, pick?, omit?, mode?, unique? })` | Zod schema of a Prisma model with every unique check wired, plus `schema.toZodIssues(e)` |
+| `zod-bridge/prisma` | `createSchema(model, descriptor, { pick \| omit, fields?, mode?, unique? })` | Zod schema of a Prisma model with every unique check wired, plus `schema.toZodIssues(e)` |
 | `zod-bridge` (Prisma generator) | `provider = "zod-bridge"` | Writes the `<Model>Model` descriptors `createSchema` reads |
 
 | Prisma code | Class | Extra property |
@@ -385,8 +385,8 @@ import { createSchema, handlePrismaError } from "zod-bridge/prisma"
 import { UserModel } from "./prisma/generated/zod-bridge"
 
 const UserSchema = createSchema(prisma.user, UserModel, {
+  pick: ["email", "name"],                 // required: the columns the client may send
   fields: { email: z.email() },            // override or add fields
-  omit: ["id", "role"],                    // server-set columns the client may not send
   unique: [{ fields: ["email"], message: "Email already taken" }],
 })
 
@@ -404,20 +404,30 @@ Partial update: `mode: "update"` makes the primary key required and every other 
 Merge the route id in before parsing; the record then excludes itself from the checks.
 
 ```ts
-const UserPatch = createSchema(prisma.user, UserModel, { mode: "update", omit: ["role"] })
+const UserPatch = createSchema(prisma.user, UserModel, {
+  mode: "update",
+  pick: ["id", "email", "name"],
+})
 
 const { id, ...data } = await UserPatch.parseAsync({ ...req.body, id: Number(req.params.id) })
 await prisma.user.update({ where: { id }, data }).catch(handlePrismaError)
 ```
 
-- **Every column is accepted unless you say otherwise.** Use `pick` or `omit` for columns the
-  client must not set (`role`, `createdAt`). Select here: Zod refuses `.pick()` / `.omit()` on a
-  schema with refinements, and `toZodIssues` exists only on the schema `createSchema` returns.
+- **`pick` or `omit` is required**, so no schema accepts every column by accident. `pick` is an
+  allow-list: a column added to the model later (`isAdmin`) stays out until you list it. Prefer
+  it for request bodies. `omit` is a deny-list (`omit: ["role", "createdAt"]`) and exposes new
+  columns until you add them; `omit: []` says "every column" on purpose. Select here: Zod refuses
+  `.pick()` / `.omit()` on a schema with refinements, and `toZodIssues` exists only on the schema
+  `createSchema` returns.
 - **The generated shape is the create input**: required columns are required, columns with a
   default (`@default`, `@updatedAt`) are optional, nullable columns accept `null`, relations are
-  left out. `Int` → `z.int()`, `DateTime` → `z.date()`, `Decimal` → number or string, `Json` →
-  `z.json()`, enums → `z.enum([...])`. Override with `fields` where your API differs
-  (`z.coerce.date()`, `z.email()`).
+  left out. `Int` → `z.int()`, `Decimal` → number or string, `Json` → `z.json()`, enums →
+  `z.enum([...])`. Override with `fields` where your API differs (`z.email()`).
+- **`DateTime` accepts what Prisma accepts**: a `Date`, or an ISO 8601 string with `Z` or an
+  offset (`"2026-11-18T12:00:00+02:00"`), which is what a JSON body carries. The parsed value is
+  always a `Date`. A string without a time zone, a date-only string, a number and `null` are
+  rejected, as Prisma rejects them for a timestamp column. A `@db.Date` column gets the same
+  schema: override the field if your API sends `"2026-11-18"`.
 - **`unique` sets the message and path per constraint**, fields as arrays in any order. A
   constraint you do not list uses the defaults (`"Value already taken"`, at `[field]`, or the
   object root for a composite). A rule that matches no constraint of the schema throws when the

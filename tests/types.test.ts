@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { z } from "zod"
 import { createSchema, prismaUnique, prismaUniqueComposite } from "../src/adapters/prisma/index.js"
 import { unique } from "../src/index.js"
-import { UserModel } from "./generated/zod-bridge.js"
+import { EventModel, UserModel } from "./generated/zod-bridge.js"
 
 // Compile-time checks: `npm run typecheck` fails if a `@ts-expect-error` line stops erroring.
 type UserWhere = { id?: number; email?: string; tenantId?: number }
@@ -33,7 +33,7 @@ describe("types", () => {
       (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
     const yes = <T extends true>(): T => true as T
 
-    const Create = createSchema(user, UserModel)
+    const Create = createSchema(user, UserModel, { omit: [] })
     yes<Equal<z.output<typeof Create>, { id?: number | undefined; email: string }>>()
 
     const Overridden = createSchema(user, UserModel, {
@@ -45,7 +45,7 @@ describe("types", () => {
     const Picked = createSchema(user, UserModel, { pick: ["email"] })
     yes<Equal<z.output<typeof Picked>, { email: string }>>()
 
-    const Patch = createSchema(user, UserModel, { mode: "update" })
+    const Patch = createSchema(user, UserModel, { mode: "update", omit: [] })
     yes<Equal<z.output<typeof Patch>, { id: number; email?: string | undefined }>>()
 
     // @ts-expect-error unknown field in omit
@@ -53,9 +53,20 @@ describe("types", () => {
     // @ts-expect-error unknown field in pick
     createSchema(user, UserModel, { pick: ["nope"] })
     // @ts-expect-error overrides must be Zod schemas
-    createSchema(user, UserModel, { fields: { email: "string" } })
+    createSchema(user, UserModel, { omit: [], fields: { email: "string" } })
     // @ts-expect-error unknown mode
-    createSchema(user, UserModel, { mode: "patch" })
+    createSchema(user, UserModel, { omit: [], mode: "patch" })
+    // compile-time only: these throw when called
+    const _missingSelection = () => {
+      // @ts-expect-error pick or omit is required
+      createSchema(user, UserModel)
+      // @ts-expect-error pick or omit is required, whatever else is given
+      createSchema(user, UserModel, { fields: { email: z.email() } })
+    }
+
+    const Event = createSchema(user, EventModel, { pick: ["startsAt"] })
+    yes<Equal<z.output<typeof Event>, { startsAt: Date }>>()
+    yes<Equal<z.input<typeof Event>, { startsAt: string | Date }>>()
 
     expect(typeof Create.toZodIssues).toBe("function")
   })

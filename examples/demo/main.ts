@@ -194,8 +194,10 @@ async function main(): Promise<void> {
   signups.push(await signup("request C", { email: "carol@example.com" }))
   for (const r of signups) console.log(`   ${r}`)
 
-  const PatchSchema = createSchema(prisma.user, UserModel, { mode: "update" })
-  code(`createSchema(prisma.user, UserModel, { mode: "update" })  // id required, rest optional`)
+  const PatchSchema = createSchema(prisma.user, UserModel, { mode: "update", omit: [] })
+  code(
+    `createSchema(prisma.user, UserModel, { mode: "update", omit: [] })  // id required, rest optional`,
+  )
   const ownPatch = await PatchSchema.safeParseAsync({ id: alice.id, email: "alice@example.com" })
   ok(
     `{ id: ${alice.id}, email: "alice@example.com" } → ${ownPatch.success ? "valid (own row excluded by primary key)" : "invalid"}`,
