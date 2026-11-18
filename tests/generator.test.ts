@@ -165,6 +165,23 @@ export const LikeModel = defineModel({
 })`)
   })
 
+  it("emits one constraint when @unique and @@unique name the same fields", () => {
+    const source = emitModels({
+      models: [
+        {
+          name: "Tag",
+          uniqueFields: [["name"], ["a", "b"], ["b", "a"]],
+          fields: [
+            { name: "name", kind: "scalar", type: "String", isRequired: true, isUnique: true },
+            { name: "a", kind: "scalar", type: "Int", isRequired: true },
+            { name: "b", kind: "scalar", type: "Int", isRequired: true },
+          ],
+        },
+      ],
+    })
+    expect(source).toContain('  unique: [["name"], ["a", "b"]],\n')
+  })
+
   it("drops a key or constraint that names a field without a column schema", () => {
     const source = emitModels({
       models: [

@@ -169,6 +169,21 @@ describe("createSchema", () => {
     expect(model.findFirst).toHaveBeenCalledTimes(1)
   })
 
+  it("a constraint on a field named like an Object.prototype member needs the field itself", () => {
+    const Odd = defineModel({
+      name: "Odd",
+      shape: { id: z.int(), toString: z.string() },
+      primaryKey: ["id"],
+      unique: [["toString"]],
+    })
+    const model = delegate("Odd")
+    const WithoutIt = createSchema(model, Odd, { pick: ["id"] })
+    expect(WithoutIt.toZodIssues(p2002(["toString"]))).toBeUndefined()
+    expect(() =>
+      createSchema(model, Odd, { pick: ["id"], unique: [{ fields: ["toString"] }] }),
+    ).toThrow(/no unique constraint/)
+  })
+
   it("throws at build time on a delegate / descriptor mismatch, naming the fix", () => {
     expect(() => createSchema(delegate("Post"), UserModel)).toThrow(
       /"Post" delegate with the "User" descriptor\. Fix:/,

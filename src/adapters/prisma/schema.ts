@@ -120,7 +120,7 @@ export type SchemaBridge = {
 }
 
 const sameSet = (a: readonly string[], b: readonly string[]) =>
-  a.length === b.length && a.every((name) => b.includes(name))
+  new Set(a).size === new Set(b).size && a.every((name) => b.includes(name))
 
 /**
  * Builds the Zod schema of a Prisma model from its generated descriptor, with
@@ -184,25 +184,30 @@ export function createSchema<
   }
 
   const primaryKey: readonly string[] = descriptor.primaryKey
-  const merged: Record<string, ZodType> = { ...descriptor.shape, ...options.fields }
-  const keys = Object.keys(merged).filter(
+  const merged = new Map<string, ZodType>([
+    ...Object.entries(descriptor.shape),
+    ...Object.entries(options.fields ?? {}),
+  ])
+  const keys = [...merged.keys()].filter(
     (name) =>
       (options.pick === undefined || options.pick.includes(name as never)) &&
       !options.omit?.includes(name as never),
   )
   const shape: Record<string, ZodType> = {}
   for (const name of keys) {
-    const field = merged[name]
+    const field = merged.get(name)
     if (field === undefined) continue
     if (options.mode !== "update") shape[name] = field
     else if (!primaryKey.includes(name)) shape[name] = field.optional()
     else shape[name] = field instanceof ZodOptional ? (field.unwrap() as ZodType) : field
   }
 
+  // Own keys only: `"toString" in shape` is true for every object.
+  const holds = (group: readonly string[]) => group.every((name) => Object.hasOwn(shape, name))
   const rules = options.unique ?? []
   for (const rule of rules) {
     const constraint = descriptor.unique.find((group) => sameSet(group, rule.fields))
-    if (constraint === undefined || !constraint.every((name) => name in shape)) {
+    if (constraint === undefined || !holds(constraint)) {
       throw new Error(
         `createSchema: no unique constraint on [${rule.fields.join(", ")}] in this ${descriptor.name} schema. ` +
           `Fix: list the fields of a @unique / @@unique of the model that the schema keeps ` +
@@ -217,7 +222,7 @@ export function createSchema<
     const [first, ...rest] = group
     // A constraint the schema does not fully hold cannot be pre-checked, and
     // its database error is not about the submitted values: left to rethrow.
-    if (first === undefined || !group.every((name) => name in shape)) continue
+    if (first === undefined || !holds(group)) continue
     const rule = rules.find((candidate) => sameSet(candidate.fields, group))
     const check =
       rest.length === 0

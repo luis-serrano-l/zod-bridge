@@ -101,10 +101,17 @@ function modelSource(model: DmmfModel, enums: ReadonlyMap<string, DmmfEnum>): st
 
   const idField = fields.find(({ field }) => field.isId)?.field.name
   const primaryKey = model.primaryKey?.fields ?? (idField === undefined ? [] : [idField])
+  const seen = new Set<string>()
   const unique = [
     ...fields.filter(({ field }) => field.isUnique).map(({ field }) => [field.name]),
     ...(model.uniqueFields ?? []),
-  ].filter((group) => group.length > 0 && allKnown(group))
+  ].filter((group) => {
+    // One check per constraint: the same fields in another order are the same pre-check.
+    const id = JSON.stringify([...group].sort())
+    if (group.length === 0 || !allKnown(group) || seen.has(id)) return false
+    seen.add(id)
+    return true
+  })
   const columns = fields.filter(({ field }) => typeof field.dbName === "string")
 
   const lines = [

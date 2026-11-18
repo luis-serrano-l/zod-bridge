@@ -60,8 +60,8 @@ export type UniqueFn<T, TExclude = unknown> = ((
  * - Requires `parseAsync` / `safeParseAsync`. `.parse()` throws Zod's
  *   "Encountered Promise during synchronous parse".
  * - `check` is skipped when the value already has an issue at or under the
- *   check's path (any issue, when there is no path), so invalid input never
- *   reaches the database.
+ *   check's path or the field the check reads (any issue, when there is no
+ *   path), so invalid input never reaches the database.
  * - Best-effort: two concurrent requests can both pass. Keep the database
  *   constraint and translate its error with `handlePrismaError`.
  * - To exclude the record being edited, wrap the object (not the field) so
@@ -98,10 +98,15 @@ export function unique<TSchema extends ZodType, TExclude = unknown>(
     // Zod adds the parent key.
     const hint = isPlainObject(val) ? check.path : undefined
     // Don't hit the DB for a value that already failed validation. With a path
-    // only issues at or under it count; without one, any issue does.
+    // only issues at or under it count; without one, any issue does. The hint
+    // counts too: `options.path` moves the report, not the field that is read.
     const path = (typeof options === "object" ? options.path : undefined) ?? hint ?? []
-    const alreadyInvalid = ctx.issues.some((issue) =>
-      path.every((key, i) => issue.path?.[i] === key),
+    const under = (
+      issue: { readonly path?: readonly PropertyKey[] | undefined },
+      at: readonly PropertyKey[],
+    ) => at.every((key, i) => issue.path?.[i] === key)
+    const alreadyInvalid = ctx.issues.some(
+      (issue) => under(issue, path) || (hint !== undefined && under(issue, hint)),
     )
     if (alreadyInvalid) return
 

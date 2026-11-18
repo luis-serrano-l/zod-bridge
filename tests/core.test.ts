@@ -139,4 +139,20 @@ describe("core", () => {
     await lists.safeParseAsync({ at: [] })
     expect(check).not.toHaveBeenCalled()
   })
+
+  it("options.path moves the report, not the skip: an invalid checked field is still not looked up", async () => {
+    const check = Object.assign(
+      vi.fn(async () => false),
+      { path: ["email"] },
+    )
+    const schema = unique(z.object({ email: z.email() }), check, { path: ["form"] })
+
+    await schema.safeParseAsync({ email: "not-an-email" })
+    expect(check).not.toHaveBeenCalled()
+
+    const result = await schema.safeParseAsync({ email: "a@b.com" })
+    expect(result.error?.issues).toEqual([
+      { code: "custom", message: "Value already taken", path: ["form"] },
+    ])
+  })
 })

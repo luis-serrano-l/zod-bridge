@@ -32,6 +32,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `unique()` with `options.path` on an object-level check (`unique(z.object(...),
+  prismaUnique(prisma.user, "email"), { path: ["form"] })`) queried the database for an email that
+  had already failed validation: only issues under `path` were considered. Issues on the field the
+  check reads now skip the lookup too.
+
 - `unique()` used inside `z.object` with a check fn that carries a path hint
   (`z.object({ email: unique(z.email(), prismaUnique(prisma.user, "email")) })`) reported the issue
   at `["email", "email"]` and queried the database even when the field had already failed

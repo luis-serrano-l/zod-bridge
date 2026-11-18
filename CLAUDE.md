@@ -116,8 +116,9 @@ prismaUniqueComposite(model, fields, { primaryKey? })   // check fn for uniqueCo
 // Object value + primaryKey fields present (default "id") → that record is excluded (NOT) automatically.
 // prismaUnique reports at path [field] in object form. excludeWhere (typed as WhereInput) overrides.
 // Every typed error keeps the original PrismaClientKnownRequestError as `cause`.
-// unique() skips the check fn when the value already has an issue at/under the check's path
-// (any issue when there is no path hint). options.path overrides where the issue is reported.
+// unique() skips the check fn when the value already has an issue at/under the check's path or
+// its path hint (any issue when there is neither). options.path overrides where the issue is
+// reported, not which field's issues cause the skip.
 // The check fn's path hint applies only when the parsed value is a plain object (isPlainObject in
 // src/internal/plain-object.ts, shared by core and prismaUnique): field-level use inside z.object
 // reports at the field root (Zod adds the parent key), never at [field, field].
