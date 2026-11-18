@@ -2,6 +2,11 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// Writes prisma/generated/zod-bridge.ts: one descriptor per model, read by createSchema().
+generator zodBridge {
+  provider = "zod-bridge"
+}
+
 datasource db {
   provider = "postgresql"
 }

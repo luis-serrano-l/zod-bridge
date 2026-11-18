@@ -24,3 +24,8 @@ model Like {
 
   @@unique([userId, postId])
 }
+
+model Event {
+  id       Int      @id @default(autoincrement())
+  startsAt DateTime
+}
