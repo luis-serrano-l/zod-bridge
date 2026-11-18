@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client"
 import { z } from "zod"
 import { unique, uniqueComposite } from "zod-bridge"
 import {
+  createSchema,
   findOrThrow,
   handlePrismaError,
   PrismaForeignKeyError,
@@ -11,6 +12,8 @@ import {
   prismaUnique,
   prismaUniqueComposite,
 } from "zod-bridge/prisma"
+// written by `prisma generate` (generator zodBridge in prisma/schema.prisma)
+import { UserModel } from "./prisma/generated/zod-bridge.js"
 
 // --- tiny ANSI helpers (no deps) ---------------------------------------------
 const bold = (s: string): string => `\x1b[1m${s}\x1b[0m`
@@ -161,6 +164,42 @@ async function main(): Promise<void> {
   }
   const results = await Promise.all([insert("request A"), insert("request B")])
   for (const r of results) console.log(`   ${r}`)
+
+  // 8 ---------------------------------------------------------------------------
+  section("createSchema(): both layers from the Prisma schema, one error branch")
+  const SignupSchema = createSchema(prisma.user, UserModel, {
+    fields: { email: z.email() },
+    omit: ["id"],
+    unique: [{ fields: ["email"], message: "Email already taken" }],
+  })
+  code(
+    `createSchema(prisma.user, UserModel, { fields: { email: z.email() }, omit: ["id"], unique: [...] })`,
+  )
+  const signup = async (label: string, input: unknown): Promise<string> => {
+    try {
+      const data = await SignupSchema.parseAsync(input)
+      await prisma.user.create({ data }).catch(handlePrismaError)
+      return `${green("✔")} ${label}: inserted`
+    } catch (e) {
+      const issues = SignupSchema.toZodIssues(e) // pre-check or lost race: same issues
+      if (!issues) throw e
+      return `${red("✖")} ${label}: ${yellow(JSON.stringify(issues))}`
+    }
+  }
+  code(`// two concurrent signups, then a third: the loser of the race and the pre-check agree`)
+  const signups = await Promise.all([
+    signup("request A", { email: "carol@example.com" }),
+    signup("request B", { email: "carol@example.com" }),
+  ])
+  signups.push(await signup("request C", { email: "carol@example.com" }))
+  for (const r of signups) console.log(`   ${r}`)
+
+  const PatchSchema = createSchema(prisma.user, UserModel, { mode: "update" })
+  code(`createSchema(prisma.user, UserModel, { mode: "update" })  // id required, rest optional`)
+  const ownPatch = await PatchSchema.safeParseAsync({ id: alice.id, email: "alice@example.com" })
+  ok(
+    `{ id: ${alice.id}, email: "alice@example.com" } → ${ownPatch.success ? "valid (own row excluded by primary key)" : "invalid"}`,
+  )
 
   console.log(
     `\n${green(bold("Done."))} ${dim("All errors above were typed — no magic string codes.")}\n`,

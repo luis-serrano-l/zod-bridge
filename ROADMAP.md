@@ -390,39 +390,45 @@ const LikeSchema = uniqueComposite(
 Build after Phase 3 is stable. Highest value feature, needs Phases 1 and 3
 working correctly first.
 
-### What to build
+### What was built
+
+```prisma
+generator zodBridge {
+  provider = "zod-bridge"   // writes ./generated/zod-bridge.ts next to the schema
+}
+```
 
 ```ts
 import { createSchema } from "zod-bridge/prisma"
+import { UserModel } from "./prisma/generated/zod-bridge"
 
-const UserSchema = createSchema(prisma.user, {
-  email: unique(z.email(), prismaUnique(prisma.user, "email"), "Email already taken"),
-  username: unique(z.string().min(3), prismaUnique(prisma.user, "username"), "Username taken"),
-  name: z.string().optional()
+const UserSchema = createSchema(prisma.user, UserModel, {
+  fields: { email: z.email() },
+  omit: ["id"],
+  unique: [{ fields: ["email"], message: "Email already taken" }],
 })
 ```
 
 `createSchema` wires up:
-- The Prisma model shape as the base, derived from `Prisma.dmmf.datamodel`
-  at runtime (or a codegen step for build-time types).
-- Your Zod overrides merged on top.
-- `handlePrismaError` as a catch layer for race conditions.
-- Update mode wires `excludeWhere` automatically when an ID is supplied.
+- The model shape as the base, from a descriptor the generator writes at `prisma generate` time
+  (`Prisma.dmmf` at runtime lacks types, keys and constraints).
+- Your Zod overrides merged on top (`fields`), column selection (`pick` / `omit`).
+- A uniqueness check per `@unique` / `@@unique`, excluding the record being edited through the
+  model's real primary key; `mode: "update"` for partial updates.
+- `schema.toZodIssues(err)` as the catch layer for race conditions.
 
-**Implementation note:** the Prisma client does not expose model field types
-at runtime. `createSchema` must read `Prisma.dmmf.datamodel` to derive the
-base shape. This is the non-trivial part of Phase 4 — budget time for it.
-A codegen alternative (emit a `.ts` file at `prisma generate` time) is the
-safer path if DMMF coverage proves incomplete.
+Differences from the original sketch (`createSchema(prisma.user, overrides)`) and their reasons are
+in DECISIONS.md.
 
 ### Checklist
 
-- [ ] `createSchema(prisma.user, overrides)` reads `Prisma.dmmf.datamodel`
-- [ ] Override merging
-- [ ] `handlePrismaError` catch layer wired
-- [ ] Update mode auto-wires `excludeWhere`
-- [ ] Tests against real Prisma schema
-- [ ] Codegen path evaluated if DMMF coverage gaps
+- [x] Generator (`provider = "zod-bridge"`) emits model descriptors; `Prisma.dmmf` ruled out
+- [x] `createSchema(prisma.user, UserModel, options)` builds the base shape
+- [x] Override merging, `pick` / `omit`
+- [x] Race catch layer: `schema.toZodIssues`
+- [x] Update mode excludes the record through the generated primary key
+- [x] Tests against real Prisma schema (unit, Postgres integration, demo)
+- [ ] Released and tried in a real app
 
 ---
 
@@ -474,7 +480,7 @@ const EmailSchema = unique(
 | Real-project test | ⬜ | Install via `npm link` in a real project, validate API feel |
 | Phase 1 complete | ✅ published as `0.1.0` | Real-project test done, published as `0.1.0` on npm |
 | Phase 3 complete | ✅ built | Zod extension stable |
-| Phase 4 complete | ⬜ | Schema bridge tested with real apps |
+| Phase 4 complete | ✅ built, unreleased | Schema bridge tested with real apps |
 
 ---
 

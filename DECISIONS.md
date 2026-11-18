@@ -137,3 +137,49 @@ try {
   The `try` block should hold only the request parse and the write.
 - **Best effort on Prisma 7.10+**, where fields are derived from the index name: a column containing
   `_` splits into several names and the issue lands at the root. Pass `path` when that matters.
+
+## Schema bridge: `createSchema` and the generator
+
+`createSchema(prisma.user, UserModel, options)` returns the Zod object of a model with both layers
+wired. The facts it needs (column types, primary key, unique constraints, `@map` names) are not
+available at runtime, so a Prisma generator writes them at `prisma generate` time.
+
+- **A Prisma generator, not `Prisma.dmmf` and not a schema parser.** `Prisma.dmmf.datamodel` in
+  Prisma 7 carries only `name` / `kind` / `type`. The DMMF a generator receives is complete
+  (`isId`, `isUnique`, `uniqueFields`, `primaryKey`, `hasDefaultValue`, `dbName`) and comes from
+  Prisma itself, so nothing here parses `.prisma` files. The generator speaks the line-delimited
+  JSON-RPC protocol directly (requests on stdin, responses on stderr) instead of depending on
+  `@prisma/generator-helper`: two methods, no new dependency, and the binary imports neither `zod`
+  nor `@prisma/client`.
+- **The descriptor is an explicit argument.** The roadmap sketched `createSchema(prisma.user,
+  overrides)`. That needs a registry mapping a delegate to its descriptor, and a type-level mapping
+  from the delegate type to the model, which Prisma's types do not offer in a stable way. Passing
+  `UserModel` keeps the types plain inference from a literal, works with any client output path,
+  and a mismatch (`prisma.post` with `UserModel`) throws when the schema is built (`$name`).
+- **The generated file contains Zod code, not data.** `shape: { id: z.int().optional(), ... }` is
+  typed by inference, readable, and diffable in review. A JSON description would need a second,
+  hand-maintained type mapping.
+- **The shape is the create input**, so one descriptor serves create as is and update through
+  `mode: "update"` (primary key required and unwrapped from `.optional()`, the rest optional).
+  `DateTime` is `z.date()` and not `z.coerce.date()`: coercion turns `null` into 1970 and makes the
+  input type `unknown`; an API that receives ISO strings overrides the field.
+- **Every column is included by default; `pick` / `omit` are options.** Zod throws on `.pick()` /
+  `.omit()` of an object with refinements, so selection has to happen before the checks are
+  attached. Including everything is the predictable default for a function that mirrors the model;
+  the README says to omit server-set columns.
+- **Unique checks are object-level** (`unique(z.object(...), prismaUnique(model, field, {
+  primaryKey }))`), the only form in which a check can see the primary key. The key comes from the
+  schema, so the `"id"` convention of `prismaUnique` is not involved. The primary key itself is not
+  pre-checked: the record would exclude itself.
+- **`unique: [{ fields, message?, path? }]` is the message map that `handlePrismaError` was
+  denied.** Here the schema owns both the validator and the conversion, so one entry configures
+  both and they cannot drift. Fields are arrays. A rule that matches no constraint held by the
+  schema throws at build time (typo, or a column that was omitted).
+- **`toZodIssues` is a method on the returned schema.** It chains the standalone `toZodIssues` with
+  a `fields` guard per constraint (database column names from `@map`, issue path at the Zod key).
+  A conflict on a constraint the schema does not validate returns `undefined`. The alternative, a
+  `{ schema, toZodIssues }` pair, makes every call site destructure; the cost of the method is
+  that a derived schema (`.optional()`, `.describe()`) no longer has it, which is documented.
+- **Limits.** `Unsupported(...)` columns and relations are skipped, and a key or constraint that
+  includes one is dropped. `@@unique(map: "custom")` on Prisma 7.10+ cannot be matched from the
+  index name, so its lost-race error is rethrown rather than mislabelled.

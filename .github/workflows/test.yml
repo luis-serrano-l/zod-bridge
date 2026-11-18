@@ -34,6 +34,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run test:unit
       - run: npm run build
+      - name: Generated test descriptors are current
+        run: node scripts/generate-test-models.mjs && git diff --exit-code tests/generated
       - run: npm pack --dry-run
 
   integration:

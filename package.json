@@ -15,6 +15,9 @@
       "import": "./dist/adapters/prisma/index.js"
     }
   },
+  "bin": {
+    "zod-bridge": "./dist/adapters/prisma/generator.js"
+  },
   "files": [
     "dist"
   ],
@@ -27,7 +30,8 @@
     "test:integration": "vitest run --project integration",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "db:push": "prisma db push"
+    "db:push": "prisma db push",
+    "generate:models": "npm run build && node scripts/generate-test-models.mjs"
   },
   "keywords": [
     "zod",

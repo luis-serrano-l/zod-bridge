@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { ZodError, z } from "zod"
 import {
+  createSchema,
   findOrThrow,
   handlePrismaError,
   PrismaForeignKeyError,
@@ -13,6 +14,7 @@ import {
   toZodIssues,
 } from "../../src/adapters/prisma/index.js"
 import { unique, uniqueComposite } from "../../src/core/index.js"
+import { LikeModel, UserModel } from "../generated/zod-bridge.js"
 
 let prisma: PrismaClient
 
@@ -274,5 +276,85 @@ describe("P2025 — not found", () => {
     await expect(
       findOrThrow(() => prisma.user.findUnique({ where: { id: 9999 } })),
     ).rejects.toBeInstanceOf(PrismaNotFoundError)
+  })
+})
+
+describe("createSchema — generated descriptors against real Postgres", () => {
+  it("pre-check and lost race report the same issue through schema.toZodIssues", async () => {
+    const UserSchema = createSchema(prisma.user, UserModel, {
+      fields: { email: z.email() },
+      omit: ["id"], // server-assigned
+      unique: [{ fields: ["email"], message: "Email taken" }],
+    })
+    const signup = async (input: unknown) => {
+      try {
+        const data = await UserSchema.parseAsync(input)
+        await prisma.user.create({ data }).catch(handlePrismaError)
+        return undefined
+      } catch (e) {
+        const issues = UserSchema.toZodIssues(e) // the one error branch
+        if (issues === undefined) throw e
+        return issues
+      }
+    }
+
+    // both pass the pre-check, Postgres lets one through
+    const results = await Promise.all([
+      signup({ email: "race@b.com" }),
+      signup({ email: "race@b.com" }),
+    ])
+    const lostRace = results.find((issues) => issues !== undefined)
+    expect(results.filter((issues) => issues === undefined)).toHaveLength(1)
+
+    // a later request is stopped by the pre-check, with the same issue
+    const preCheck = await signup({ email: "race@b.com" })
+    expect(preCheck).toEqual([{ code: "custom", message: "Email taken", path: ["email"] }])
+    expect(lostRace).toEqual(preCheck)
+  })
+
+  it('mode "update": the record excludes itself through the generated primary key', async () => {
+    const one = await prisma.user.create({ data: { email: "one@b.com" } })
+    await prisma.user.create({ data: { email: "two@b.com" } })
+    const UserPatch = createSchema(prisma.user, UserModel, { mode: "update" })
+
+    await expect(UserPatch.parseAsync({ id: one.id, email: "one@b.com" })).resolves.toEqual({
+      id: one.id,
+      email: "one@b.com",
+    })
+    await expect(UserPatch.parseAsync({ id: one.id, email: "two@b.com" })).rejects.toMatchObject({
+      issues: [{ code: "custom", path: ["email"] }],
+    })
+  })
+
+  it("composite constraint: pre-check and database error agree", async () => {
+    const LikeSchema = createSchema(prisma.like, LikeModel, {
+      unique: [{ fields: ["userId", "postId"], message: "Already liked", path: ["postId"] }],
+    })
+    await prisma.like.create({ data: await LikeSchema.parseAsync({ userId: 1, postId: 2 }) })
+
+    const refine = await LikeSchema.safeParseAsync({ userId: 1, postId: 2 })
+    expect(refine.error?.issues).toEqual([
+      { code: "custom", message: "Already liked", path: ["postId"] },
+    ])
+
+    let caught: unknown
+    try {
+      await prisma.like.create({ data: { userId: 1, postId: 2 } })
+    } catch (e) {
+      caught = e
+    }
+    expect(LikeSchema.toZodIssues(caught)).toEqual(refine.error?.issues)
+  })
+
+  it("a conflict on a constraint the schema leaves out is not converted", async () => {
+    const NoEmail = createSchema(prisma.user, UserModel, { omit: ["email"] })
+    await prisma.user.create({ data: { email: "a@b.com" } })
+    let caught: unknown
+    try {
+      await prisma.user.create({ data: { email: "a@b.com" } })
+    } catch (e) {
+      caught = e
+    }
+    expect(NoEmail.toZodIssues(caught)).toBeUndefined()
   })
 })

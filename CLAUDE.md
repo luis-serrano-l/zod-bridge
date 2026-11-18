@@ -11,6 +11,8 @@ scripts, CI, exports, or a design decision, update the matching section here.
    and `findOrThrow`.
 2. DB-aware async uniqueness validators for Zod v4 (`unique()`, `uniqueComposite()`), with Prisma
    check functions (`prismaUnique`, `prismaUniqueComposite`).
+3. A schema bridge: a Prisma generator writes model descriptors, `createSchema` turns one into a
+   Zod schema with both layers wired.
 
 Long-form docs live elsewhere; do not duplicate them here:
 
@@ -31,6 +33,7 @@ npm run test:integration # tests/integration/ — real Postgres via testcontaine
 npm run test:watch
 npx vitest run tests/prisma.test.ts   # single file
 npx prisma generate      # regenerate client after editing prisma/schema.prisma
+npm run generate:models  # build, then rewrite tests/generated/zod-bridge.ts through a real `prisma generate`
 cd examples/demo && docker compose up --build --abort-on-container-exit && docker compose down -v
 ```
 
@@ -38,6 +41,8 @@ Requirements: Node ≥ 22.12 (`engines`), Docker for integration tests and the d
 
 Before committing: `npm run lint && npm run typecheck && npm run test:unit`. Run `npm test` if you touched
 `src/adapters/prisma/errors.ts`, `prisma/schema.prisma`, or anything under `tests/integration/`.
+Run `npm run generate:models` and commit the result if you touched `prisma/schema.prisma` or
+`src/adapters/prisma/generator/` (CI fails on a stale `tests/generated/`).
 
 ## Layout
 
@@ -49,15 +54,20 @@ src/
     index.ts                  # zod-bridge/prisma entry
     errors.ts                 # error classes + meta-shape parsing (the fragile part)
     helpers.ts                # handlePrismaError, findOrThrow, toZodIssues, prismaUnique, prismaUniqueComposite
+    schema.ts                 # createSchema, defineModel, ModelDescriptor
+    generator/                # Prisma generator: emit.ts (DMMF → source), rpc.ts (protocol), bin.ts (entry)
   internal/error-adapter.ts   # single place to swap in Prisma-native typed errors if they ever ship
   internal/plain-object.ts    # isPlainObject, shared by core and adapters — must stay DB-free
   internal/messages.ts        # uniqueMessage(), shared by unique() and toZodIssues — must stay DB-free
 tests/
   core.test.ts, prisma.test.ts        # unit (mocked PrismaClientKnownRequestError)
+  schema.test.ts, generator.test.ts   # unit: createSchema (mock delegate), emitter + generator protocol
   types.test.ts                       # compile-time checks via @ts-expect-error (enforced by typecheck)
+  generated/zod-bridge.ts             # generator output for prisma/schema.prisma, committed (generate:models)
   integration/postgres.test.ts        # real Postgres
   integration/setup.ts                # vitest globalSetup: starts container, runs db push
 prisma/schema.prisma, prisma.config.ts  # test schema: User (unique email), Post (FK), Like (composite unique)
+scripts/generate-test-models.mjs      # runs the built generator on prisma/schema.prisma + a temp generator block
 examples/demo/                # dockerized consumer app; installs the lib from a packed tarball
 .github/workflows/            # test.yml, compat.yml, publish.yml
 .claude/skills/               # release-check (pre-publish gates), prisma-error-shape (new meta shape workflow)
@@ -70,6 +80,7 @@ Package exports (tsup entries must match `package.json` `exports`):
 |---|---|---|
 | `zod-bridge` | `src/index.ts` | Never import `@prisma/client` here. Core must work with any future adapter. |
 | `zod-bridge/prisma` | `src/adapters/prisma/index.ts` | Only place that touches Prisma. |
+| `bin: zod-bridge` | `src/adapters/prisma/generator/bin.ts` | Prisma generator (`provider = "zod-bridge"`). Must import neither `zod` nor `@prisma/client`: it only writes text. |
 
 Adding an adapter (Drizzle, Kysely): new folder `src/adapters/<name>/`, new tsup entry, new
 `exports` key. Core and the Prisma adapter stay untouched. See ROADMAP.md.
@@ -112,6 +123,22 @@ prismaUniqueComposite(model, fields, { primaryKey? })   // check fn for uniqueCo
 // reports at the field root (Zod adds the parent key), never at [field, field].
 // Prisma checks return true (no query) when a checked field is absent, null (SQL NULLs never
 // conflict) or a plain object (Prisma would read it as a filter: an oracle if the schema allows it).
+
+// zod-bridge/prisma — schema bridge
+defineModel({ name, shape, primaryKey, unique, columns? })   // called by the generated file only
+createSchema(model, descriptor, { fields?, pick?, omit?, mode?: "create" | "update", unique?: { fields, message?, path? }[] })
+// → z.object(...) of the selected fields with one object-level unique() per @unique/@@unique whose
+// fields the schema holds (primaryKey from the descriptor, never the "id" convention), plus
+// schema.toZodIssues(err): toZodIssues with a `fields` guard per constraint (@map column names),
+// undefined for a constraint the schema does not validate. mode "update": primary key required
+// (unwrapped from .optional()), everything else optional. Throws at build time on a delegate /
+// descriptor mismatch ($name) and on a `unique` rule that matches no constraint of the schema.
+
+// Prisma generator (schema.prisma): generator zodBridge { provider = "zod-bridge" }
+// options: output (a .ts file, default ./generated/zod-bridge.ts next to the schema), importPath
+// (default "zod-bridge/prisma"). Emits `export const <Model>Model = defineModel({...})` per model:
+// create-input shape (defaults → .optional(), nullable → .nullish(), lists → z.array().optional(),
+// relations and Unsupported skipped), primaryKey ([] if none), unique groups, columns for @map.
 ```
 
 `handlePrismaError` takes **no options object**. A per-constraint message map was considered and
@@ -136,6 +163,15 @@ dropped (see DECISIONS.md); Phase 4's `createSchema` is where that translation b
 - **Prisma exposes no primary-key info at runtime.** `Prisma.dmmf.datamodel` fields carry only
   `name`/`kind`/`type` in Prisma 7; the `.d.ts` declares `isId`/`primaryKey` but they are
   `undefined`. That is why `primaryKey` is a convention (`"id"`) with an option, not derived.
+- **`createSchema` cannot be reshaped afterwards.** Zod throws on `.pick()` / `.omit()` of an
+  object with refinements, and `toZodIssues` lives only on the returned instance. Selection goes
+  through the `pick` / `omit` options; do not document `UserSchema.omit(...)`.
+- **The generated descriptor is Biome-formatted source.** `emit.ts` writes 2-space, no-semicolon,
+  double-quoted code so `tests/generated/` passes `npm run lint`; keep that when changing it.
+- **The generator protocol is hand-written** (`rpc.ts`): one JSON-RPC request per stdin line,
+  one response per **stderr** line, methods `getManifest` and `generate`. No
+  `@prisma/generator-helper` dependency. Anything printed to stderr that is not JSON shows up as a
+  generator error in Prisma.
 - **Composite fields are arrays** (`["userId", "postId"]`), never comma-joined strings.
 - **Error field extraction is version-dependent** (`errors.ts`). Order of fallbacks, keep it:
   1. `meta.driverAdapterError.cause.constraint.fields` — Prisma 7 + driver adapter, ≤ 7.9
@@ -168,7 +204,7 @@ Do not bump these without checking the reason still holds.
   `setup.ts` sets `DATABASE_URL` and runs `prisma db push`. Pins real `meta` shapes, the race
   window (`unique()` + `handlePrismaError`), composite unique, FK, and not-found. 60s timeout.
 - **Demo** (`examples/demo`): builds and `npm pack`s the library, installs the tarball in a plain
-  consumer app, runs every feature against Postgres. Use it to verify the published artifact
+  consumer app, runs `prisma generate` with the `zod-bridge` generator, runs every feature against Postgres. Use it to verify the published artifact
   (exports map, `.d.ts`, ESM resolution), not just the source.
 
 Prisma 7 specifics used here:
@@ -179,6 +215,8 @@ Prisma 7 specifics used here:
 ## CI and release
 
 - `test.yml` — on push to `main` and every PR. `unit` job: lint + typecheck + unit tests + `npm run build` +
+  generated-descriptor
+  freshness check (`scripts/generate-test-models.mjs` + `git diff --exit-code tests/generated`) +
   `npm pack --dry-run` on Node 22 and 24.
   `integration` job: Node 22, Docker available on the runner.
 - `compat.yml` — weekly (Monday 06:00 UTC) and manual: installs the latest `prisma`,
@@ -209,10 +247,10 @@ Prisma 7 specifics used here:
 
 ## Status
 
-Phase 0 ✅ · 0.5 ✅ · 1 (typed errors) ✅ · 3 (Zod extension) ✅ · **Phase 4 (schema bridge) next**.
-`0.1.0` is published on npm with provenance (2026-11-12, tag `v0.1.0`). Run the `release-check` skill before any further release.
+Phase 0 ✅ · 0.5 ✅ · 1 (typed errors) ✅ · 3 (Zod extension) ✅ · 4 (schema bridge) ✅ built, **unreleased**.
+`0.1.0` is published on npm with provenance (2026-11-12, tag `v0.1.0`). `toZodIssues`,
+`createSchema` and the generator are under `[Unreleased]` in CHANGELOG.md. Run the `release-check`
+skill before any further release; the next one adds a `bin`, so run the demo (it exercises
+`provider = "zod-bridge"` from the packed tarball).
 
-Phase 4 plan: `createSchema(prisma.user, overrides)` in `zod-bridge/prisma`, deriving the base
-shape from the Prisma schema, merging Zod overrides, wiring `primaryKey` for update exclusion.
-Prisma exposes neither field types nor primary keys at runtime (see the rule above), so this needs
-a codegen step; `Prisma.dmmf` is not a viable source.
+Next: release, try `createSchema` in a real app, then adapters / DB providers (ROADMAP.md).
