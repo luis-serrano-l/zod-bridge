@@ -137,3 +137,60 @@ try {
   The `try` block should hold only the request parse and the write.
 - **Best effort on Prisma 7.10+**, where fields are derived from the index name: a column containing
   `_` splits into several names and the issue lands at the root. Pass `path` when that matters.
+
+## Schema bridge: `createSchema` and the generator
+
+`createSchema(prisma.user, UserModel, options)` returns the Zod object of a model with both layers
+wired. The facts it needs (column types, primary key, unique constraints, `@map` names) are not
+available at runtime, so a Prisma generator writes them at `prisma generate` time.
+
+- **A Prisma generator, not `Prisma.dmmf` and not a schema parser.** `Prisma.dmmf.datamodel` in
+  Prisma 7 carries only `name` / `kind` / `type`. The DMMF a generator receives is complete
+  (`isId`, `isUnique`, `uniqueFields`, `primaryKey`, `hasDefaultValue`, `dbName`) and comes from
+  Prisma itself, so nothing here parses `.prisma` files. The generator speaks the line-delimited
+  JSON-RPC protocol directly (requests on stdin, responses on stderr) instead of depending on
+  `@prisma/generator-helper`: two methods, no new dependency, and the binary imports neither `zod`
+  nor `@prisma/client`.
+- **The descriptor is an explicit argument.** The roadmap sketched `createSchema(prisma.user,
+  overrides)`. That needs a registry mapping a delegate to its descriptor, and a type-level mapping
+  from the delegate type to the model, which Prisma's types do not offer in a stable way. Passing
+  `UserModel` keeps the types plain inference from a literal, works with any client output path,
+  and a mismatch (`prisma.post` with `UserModel`) throws when the schema is built (`$name`).
+- **The generated file contains Zod code, not data.** `shape: { id: z.int().optional(), ... }` is
+  typed by inference, readable, and diffable in review. A JSON description would need a second,
+  hand-maintained type mapping.
+- **The shape is the create input**, so one descriptor serves create as is and update through
+  `mode: "update"` (primary key required and unwrapped from `.optional()`, the rest optional).
+- **`DateTime` accepts exactly what Prisma accepts.** Measured on Prisma 7.10 + Postgres with
+  `prisma.event.create`: a `Date`, and ISO 8601 strings with `Z` or an offset are stored; a string
+  without a zone, a date-only string, a number and `null` are refused. The generated schema is
+  `z.union([z.date(), z.iso.datetime({ offset: true }).transform((v) => new Date(v))])`, defined
+  once per file as `dateTime`: same acceptance, and the output is always a `Date`. Rejected:
+  `z.date()` (refuses every string, so each date column of a JSON API needed an override),
+  `z.coerce.date()` (accepts the four inputs Prisma refuses, `null` as 1970) and a plain
+  `z.iso.datetime()` (refuses offsets Prisma stores). The integration suite pins both sides.
+- **`pick` or `omit` is required; there is no "every column" default.** A first version included
+  every column unless told otherwise, which made a later `isAdmin` column client-settable in every
+  schema. Ecto solves the same problem by making the allow-list a required argument of `cast/3`,
+  with no deny-list at all. Here either option satisfies the requirement: `pick` is the allow-list
+  and the documented default for request bodies; `omit` stays because a deny-list is still a
+  stated choice and suits admin forms that mirror the model (`omit: []` is "all, on purpose"), at
+  the known cost that a new column is exposed until listed. Enforced in the types and, for
+  JavaScript callers, with a throw at build time. Selection is an option and not a method because
+  Zod throws on `.pick()` / `.omit()` of an object with refinements.
+- **Unique checks are object-level** (`unique(z.object(...), prismaUnique(model, field, {
+  primaryKey }))`), the only form in which a check can see the primary key. The key comes from the
+  schema, so the `"id"` convention of `prismaUnique` is not involved. The primary key itself is not
+  pre-checked: the record would exclude itself.
+- **`unique: [{ fields, message?, path? }]` is the message map that `handlePrismaError` was
+  denied.** Here the schema owns both the validator and the conversion, so one entry configures
+  both and they cannot drift. Fields are arrays. A rule that matches no constraint held by the
+  schema throws at build time (typo, or a column that was omitted).
+- **`toZodIssues` is a method on the returned schema.** It chains the standalone `toZodIssues` with
+  a `fields` guard per constraint (database column names from `@map`, issue path at the Zod key).
+  A conflict on a constraint the schema does not validate returns `undefined`. The alternative, a
+  `{ schema, toZodIssues }` pair, makes every call site destructure; the cost of the method is
+  that a derived schema (`.optional()`, `.describe()`) no longer has it, which is documented.
+- **Limits.** `Unsupported(...)` columns and relations are skipped, and a key or constraint that
+  includes one is dropped. `@@unique(map: "custom")` on Prisma 7.10+ cannot be matched from the
+  index name, so its lost-race error is rethrown rather than mislabelled.

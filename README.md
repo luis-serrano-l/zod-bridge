@@ -29,6 +29,7 @@
 - [Typed Prisma errors](#typed-prisma-errors)
 - [Race conditions](#race-conditions)
   - [One error branch for both layers](#one-error-branch-for-both-layers)
+- [Schema bridge: createSchema](#schema-bridge-createschema)
 - [Install details](#install-details)
 - [Demo](#demo)
 - [AI agents](#ai-agents)
@@ -167,6 +168,8 @@ safety net for the request that loses a race (see [Race conditions](#race-condit
 | `zod-bridge/prisma` | `handlePrismaError(e)` | Rethrows a known Prisma error as a typed class, anything else untouched |
 | `zod-bridge/prisma` | `toZodIssues(e, message \| { message?, path?, fields? })` | Zod issues for a `ZodError` or a `PrismaUniqueConstraintError` (the issue `unique()` would have produced), `undefined` for anything else |
 | `zod-bridge/prisma` | `findOrThrow(() => query)` | Throws `PrismaNotFoundError` instead of returning `null` |
+| `zod-bridge/prisma` | `createSchema(model, descriptor, { pick \| omit, fields?, mode?, unique? })` | Zod schema of a Prisma model with every unique check wired, plus `schema.toZodIssues(e)` |
+| `zod-bridge` (Prisma generator) | `provider = "zod-bridge"` | Writes the `<Model>Model` descriptors `createSchema` reads |
 
 | Prisma code | Class | Extra property |
 |---|---|---|
@@ -358,6 +361,87 @@ const issues =
   write inside the `try`, so a failed parse of server-side data is not answered as a 400.
 - The returned array is new, the issue objects are not: copy an issue before rewriting it.
 
+## Schema bridge: createSchema
+
+`createSchema` builds the Zod schema of a model from your Prisma schema and wires both layers for
+you: a uniqueness check for every `@unique` / `@@unique`, the model's real primary key for update
+exclusion, and one function that turns a lost race into the same issue.
+
+Prisma does not expose field types or primary keys at runtime, so the facts come from a generator.
+Add it to `schema.prisma` and run `prisma generate`:
+
+```prisma
+generator zodBridge {
+  provider = "zod-bridge"
+  output   = "./generated/zod-bridge.ts" // default, relative to the schema
+}
+```
+
+It writes one descriptor per model (`UserModel`, `PostModel`, ...). Pass it next to the delegate:
+
+```ts
+import { z } from "zod"
+import { createSchema, handlePrismaError } from "zod-bridge/prisma"
+import { UserModel } from "./prisma/generated/zod-bridge"
+
+const UserSchema = createSchema(prisma.user, UserModel, {
+  pick: ["email", "name"],                 // required: the columns the client may send
+  fields: { email: z.email() },            // override or add fields
+  unique: [{ fields: ["email"], message: "Email already taken" }],
+})
+
+try {
+  const data = await UserSchema.parseAsync(req.body)   // parseAsync, never parse
+  await prisma.user.create({ data }).catch(handlePrismaError)
+} catch (e) {
+  const issues = UserSchema.toZodIssues(e)   // pre-check or lost race: the same issue
+  if (issues) return res.status(400).json({ issues })
+  throw e
+}
+```
+
+Partial update: `mode: "update"` makes the primary key required and every other field optional.
+Merge the route id in before parsing; the record then excludes itself from the checks.
+
+```ts
+const UserPatch = createSchema(prisma.user, UserModel, {
+  mode: "update",
+  pick: ["id", "email", "name"],
+})
+
+const { id, ...data } = await UserPatch.parseAsync({ ...req.body, id: Number(req.params.id) })
+await prisma.user.update({ where: { id }, data }).catch(handlePrismaError)
+```
+
+- **`pick` or `omit` is required**, so no schema accepts every column by accident. `pick` is an
+  allow-list: a column added to the model later (`isAdmin`) stays out until you list it. Prefer
+  it for request bodies. `omit` is a deny-list (`omit: ["role", "createdAt"]`) and exposes new
+  columns until you add them; `omit: []` says "every column" on purpose. Select here: Zod refuses
+  `.pick()` / `.omit()` on a schema with refinements, and `toZodIssues` exists only on the schema
+  `createSchema` returns.
+- **The generated shape is the create input**: required columns are required, columns with a
+  default (`@default`, `@updatedAt`) are optional, nullable columns accept `null`, relations are
+  left out. `Int` → `z.int()`, `Decimal` → number or string, `Json` → `z.json()`, enums →
+  `z.enum([...])`. Override with `fields` where your API differs (`z.email()`).
+- **`DateTime` accepts what Prisma accepts**: a `Date`, or an ISO 8601 string with `Z` or an
+  offset (`"2026-11-18T12:00:00+02:00"`), which is what a JSON body carries. The parsed value is
+  always a `Date`. A string without a time zone, a date-only string, a number and `null` are
+  rejected, as Prisma rejects them for a timestamp column. A `@db.Date` column gets the same
+  schema: override the field if your API sends `"2026-11-18"`.
+- **`unique` sets the message and path per constraint**, fields as arrays in any order. A
+  constraint you do not list uses the defaults (`"Value already taken"`, at `[field]`, or the
+  object root for a composite). A rule that matches no constraint of the schema throws when the
+  schema is built.
+- **`schema.toZodIssues(e)`** is [`toZodIssues`](#one-error-branch-for-both-layers) with this
+  schema's constraints, messages, paths and `@map`ped column names filled in. A conflict on a
+  constraint the schema does not validate (an omitted column) returns `undefined`: rethrow it.
+- A constraint with a custom database name (`@@unique(map: "...")`) is still pre-checked, but on
+  Prisma 7.10+ its lost-race error cannot be matched and is rethrown.
+- With `exactOptionalPropertyTypes`, an optional field you pass on to Prisma (`id?: number |
+  undefined`) does not typecheck; `omit` it or destructure it out.
+- Rerun `prisma generate` after editing the Prisma schema. Options of the generator block:
+  `output` (a `.ts` file) and `importPath` (default `"zod-bridge/prisma"`).
+
 ## Install details
 
 Peer dependencies: `zod ^4.0.0`, `@prisma/client ^5–7` (optional, only needed for the `/prisma` import). Requires Node ≥ 22.12. ESM only.
@@ -365,7 +449,8 @@ Peer dependencies: `zod ^4.0.0`, `@prisma/client ^5–7` (optional, only needed 
 | Import | Contents | Depends on |
 |--------|----------|------------|
 | `zod-bridge` | `unique()`, `uniqueComposite()`, ORM-agnostic | `zod` only |
-| `zod-bridge/prisma` | Typed error classes, `handlePrismaError`, `findOrThrow`, `prismaUnique*` | `zod` + `@prisma/client` |
+| `zod-bridge/prisma` | Typed error classes, `handlePrismaError`, `findOrThrow`, `prismaUnique*`, `createSchema` | `zod` + `@prisma/client` |
+| `zod-bridge` binary | Prisma generator for `createSchema` (`provider = "zod-bridge"`) | nothing at generate time |
 
 The root export has no database dependency, so the validators work with any ORM or a raw query.
 Prisma is the only adapter today; others (e.g. Drizzle) can be added as `zod-bridge/<adapter>`.

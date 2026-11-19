@@ -192,7 +192,8 @@ function sameFields(actual: readonly string[], expected: readonly string[]): boo
   return new Set(actual).size === wanted.size && actual.every((field) => wanted.has(field))
 }
 
-type FindFirstModel = {
+/** Structural type of a Prisma model delegate (`prisma.user`): anything with `findFirst`. */
+export type FindFirstModel = {
   // Prisma generates model-specific types; `any` is required for structural compatibility.
   // biome-ignore lint/suspicious/noExplicitAny: see above
   findFirst(args?: { where?: any }): Promise<unknown>

@@ -8,3 +8,4 @@ dist/
 !.claude/agents/
 .claude/skills/typescript-style/
 .code-review-graph/
+examples/demo/prisma/generated/
