@@ -11,7 +11,7 @@ export type Finding = {
   /** 1-based, of the first matched character. */
   readonly column: number
   readonly rule: Rule
-  /** The matched line, trimmed. */
+  /** The matched line, trimmed, cut to 200 characters around the match. */
   readonly source: string
   /** What to write with zod-bridge instead. */
   readonly replacement: string
@@ -35,16 +35,30 @@ const REPLACEMENTS: Readonly<Record<Rule, string>> = {
     "meta.field_name is missing on Prisma 7 with a driver adapter.",
 }
 
-// A quoted code: `"P2002"`, in any quote style.
-const CODE = /(["'`])(P2002|P2003|P2025|P2014)\1/g
+// A quoted code (`"P2002"`, any quote style) or an unquoted object key (`{ P2002: 409 }`).
+const CODE = /(["'`])(P2002|P2003|P2025|P2014)\1|\b(P2002|P2003|P2025|P2014)\s*:(?!:)/g
 
 // A `target` / `field_name` read off something named `meta`: `meta.target`, `meta?.target`,
-// `meta!.target`, `(meta as T).target`, and the same with `["target"]`.
+// `meta!.target`, `(meta).target`, `(meta as T).target`, and the same with `["target"]`.
 const META =
-  /\bmeta(?:\s*!|\s+as\s+[^()]+\))?\s*(?:(?:\?\.|\.)\s*(target|field_name)\b|(?:\?\.)?\s*\[\s*(["'`])(target|field_name)\2\s*\])/g
+  /\bmeta(?:\s*!|\s*\)|\s+as\s+[^()]+\))?\s*(?:(?:\?\.|\.)\s*(target|field_name)\b|(?:\?\.)?\s*\[\s*(["'`])(target|field_name)\2\s*\])/g
 
-/** A comment that opens the line and closes on it: the code after it is still scanned. */
-const LEADING_BLOCK_COMMENT = /^\s*\/\*.*?\*\//
+/** Comments that open the line and close on it: the code after them is still scanned. */
+const LEADING_BLOCK_COMMENTS = /^(?:\s*\/\*.*?\*\/)+/
+
+/** `source` is cut to this many characters around the match (a minified bundle is one line). */
+const SOURCE_WINDOW = 200
+
+function excerpt(line: string, column: number): string {
+  const trimmed = line.trim()
+  if (trimmed.length <= SOURCE_WINDOW) return trimmed
+  const start = Math.max(
+    0,
+    column - 1 - (line.length - line.trimStart().length) - SOURCE_WINDOW / 2,
+  )
+  const cut = trimmed.slice(start, start + SOURCE_WINDOW)
+  return `${start > 0 ? "…" : ""}${cut}${start + SOURCE_WINDOW < trimmed.length ? "…" : ""}`
+}
 
 /**
  * Whole-line comments only: `//`, an unclosed `/*`, and the `*` lines of a block comment.
@@ -61,11 +75,11 @@ export function scanSource(source: string, file: string): Finding[] {
   const lines = source.split(/\r?\n/)
   for (const [index, line] of lines.entries()) {
     // blanked, not removed: columns stay those of the original line
-    const text = line.replace(LEADING_BLOCK_COMMENT, (comment) => " ".repeat(comment.length))
+    const text = line.replace(LEADING_BLOCK_COMMENTS, (comment) => " ".repeat(comment.length))
     if (COMMENT_LINE.test(text)) continue
     const matches: { readonly column: number; readonly rule: Rule }[] = []
     for (const match of text.matchAll(CODE)) {
-      matches.push({ column: match.index + 1, rule: match[2] as Rule })
+      matches.push({ column: match.index + 1, rule: (match[2] ?? match[3]) as Rule })
     }
     for (const match of text.matchAll(META)) {
       matches.push({ column: match.index + 1, rule: `meta.${match[1] ?? match[3]}` as Rule })
@@ -76,7 +90,7 @@ export function scanSource(source: string, file: string): Finding[] {
         line: index + 1,
         column,
         rule,
-        source: line.trim(),
+        source: excerpt(line, column),
         replacement: REPLACEMENTS[rule],
       })
     }

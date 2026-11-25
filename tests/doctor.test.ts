@@ -31,7 +31,8 @@ describe("scanSource", () => {
     expect(rules(`switch (e.code) {\n  case "P2002":\n    break\n}`)).toEqual(["P2002"])
     expect(
       rules(`const STATUS = { P2002: 409 }\nif (["P2025", "P2003"].includes(code)) {}`),
-    ).toEqual(["P2025", "P2003"])
+    ).toEqual(["P2002", "P2025", "P2003"])
+    expect(rules(`const STATUS = { "P2002": 409, P2025: 404 }`)).toEqual(["P2002", "P2025"])
   })
 
   it("finds meta.target and meta.field_name in every access form", () => {
@@ -44,6 +45,7 @@ describe("scanSource", () => {
     expect(rules(`const fields = err.meta!.target as string[]`)).toEqual(["meta.target"])
     expect(rules(`const fields = err.meta!["target"]`)).toEqual(["meta.target"])
     expect(rules(`const fields = (err.meta as any).target`)).toEqual(["meta.target"])
+    expect(rules(`const fields = (err.meta).target`)).toEqual(["meta.target"])
     expect(rules(`const field = (err.meta as Meta)?.field_name`)).toEqual(["meta.field_name"])
   })
 
@@ -88,6 +90,14 @@ describe("scanSource", () => {
       { rule: "P2002", column: 29, source: `/* legacy */ if (e.code === "P2002") {}` },
     ])
     expect(rules(`/* "P2002" */ const a = 1`)).toEqual([])
+    expect(rules(`/* a */ /* b */ if (e.code === "P2025") {}`)).toEqual(["P2025"])
+  })
+
+  it("cuts a long line to a window around the match", () => {
+    const line = `${"x".repeat(5000)}e.code==="P2002"${"y".repeat(5000)}`
+    const [finding] = scanSource(line, "a.min.js")
+    expect(finding?.source.length).toBeLessThanOrEqual(202)
+    expect(finding?.source).toContain(`"P2002"`)
   })
 
   it("handles CRLF line endings", () => {
@@ -184,6 +194,17 @@ describe("runDoctor", () => {
     expect(JSON.parse(await runDoctor(["src", "empty", "--json"], dir)).errors).toEqual([
       "Expected one directory, got 2",
     ])
+  })
+
+  it("reads every argument after -- as a path", async () => {
+    await mkdir(join(dir, "-legacy"), { recursive: true })
+    await writeFile(join(dir, "-legacy", "a.ts"), `if (e.code === "P2003") {}\n`)
+    const report = JSON.parse(await runDoctor(["--json", "--", "-legacy"], dir))
+    expect(report.findings).toMatchObject([{ file: "-legacy/a.ts", rule: "P2003" }])
+  })
+
+  it("keeps stdout JSON for --json --help", async () => {
+    expect(JSON.parse(await runDoctor(["--json", "--help"], dir)).usage).toContain("Usage:")
   })
 
   it("prints usage for --help and for an unknown flag", async () => {

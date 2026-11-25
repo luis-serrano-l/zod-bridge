@@ -20,10 +20,13 @@ export const DOCTOR_USAGE = `Usage: zod-bridge doctor [dir] [--json]
 
 Finds hand-rolled Prisma error handling (the quoted codes "P2002" / "P2003" / "P2025" / "P2014",
 meta.target, meta.field_name) under dir (default: the current directory) and prints the zod-bridge
-replacement for each. Scans .ts, .tsx, .js, .jsx, .mts, .cts, .mjs and .cjs files; a file given
+replacement for each. Test files are scanned too: a hit in a fixture that builds a Prisma error
+is expected. Scans .ts, .tsx, .js, .jsx, .mts, .cts, .mjs and .cjs files; a file given
 instead of a directory is scanned whatever its extension. Read-only; always exits 0.
 
-  --json   print { root, filesScanned, findings, errors } as JSON
+  --json   print { root, filesScanned, findings, errors } as JSON ({ usage } with --help)
+
+Without a command, zod-bridge is the Prisma generator: generator zodBridge { provider = "zod-bridge" }
 `
 
 const SOURCE_FILE = /\.(?:[cm]?[jt]s|[jt]sx)$/
@@ -143,10 +146,18 @@ export async function runDoctor(
   args: readonly string[],
   cwd: string = process.cwd(),
 ): Promise<string> {
-  const options = args.filter((a) => a.startsWith("-"))
-  const dirs = args.filter((a) => !a.startsWith("-"))
-  if (options.includes("--help") || options.includes("-h")) return DOCTOR_USAGE
+  // after `--`, every argument is a path (`doctor -- -legacy`)
+  const end = args.indexOf("--")
+  const flags = end === -1 ? args : args.slice(0, end)
+  const options = flags.filter((a) => a.startsWith("-"))
+  const dirs = [
+    ...flags.filter((a) => !a.startsWith("-")),
+    ...(end === -1 ? [] : args.slice(end + 1)),
+  ]
   const json = options.includes("--json")
+  if (options.includes("--help") || options.includes("-h")) {
+    return json ? `${JSON.stringify({ usage: DOCTOR_USAGE })}\n` : DOCTOR_USAGE
+  }
   const print = (report: DoctorReport): string =>
     json ? `${JSON.stringify(report, null, 2)}\n` : formatReport(report)
 

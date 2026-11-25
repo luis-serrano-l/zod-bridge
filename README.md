@@ -464,8 +464,8 @@ src/routes/users.ts:13:49  meta.target  return { status: 409, body: { fields: er
 2 findings in 1 file (14 scanned). ...
 ```
 
-- It looks for the quoted codes `"P2002"`, `"P2003"`, `"P2025"` and `"P2014"` (comparisons, `switch`
-  cases, lists) and for reads of `meta.target` and `meta.field_name`, in `.ts`, `.tsx`, `.js`,
+- It looks for the codes `P2002`, `P2003`, `P2025` and `P2014` as strings (comparisons, `switch`
+  cases, lists) or object keys (`{ P2002: 409 }`) and for reads of `meta.target` and `meta.field_name`, in `.ts`, `.tsx`, `.js`,
   `.jsx`, `.mts`, `.cts`, `.mjs` and `.cjs` files.
 - `node_modules`, `dist`, `coverage`, dot-directories, symlinks and `.d.ts` files are skipped, and
   so are `build` and `out` next to a `package.json` (a `src/build/` is scanned). Whole-line
@@ -474,7 +474,8 @@ src/routes/users.ts:13:49  meta.target  return { status: 409, body: { fields: er
 - `--json` prints `{ root, filesScanned, findings, errors }`. Each finding is
   `{ file, line, column, rule, source, replacement }`, with `file` relative to the working directory.
   With `--json`, stdout is always that object: an unreadable path or a mistyped option is in `errors`.
-- The match is textual: a hit is a place to look at, not a proven bug.
+- The match is textual: a hit is a place to look at, not a proven bug. Test files are scanned too,
+  so a fixture that builds a Prisma error shows up.
 
 ## Install details
 

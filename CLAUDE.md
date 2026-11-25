@@ -153,11 +153,12 @@ createSchema(model, descriptor, { pick | omit (one required), fields?, mode?: "c
 // Textual scan of .ts/.tsx/.js/.jsx/.mts/.cts/.mjs/.cjs (not .d.ts; node_modules, dist, coverage,
 // dot-directories, symlinks and whole-line comments skipped; build / out skipped only next to a
 // package.json; an explicit file is scanned whatever its extension) for the quoted codes
-// "P2002" / "P2003" / "P2025" / "P2014" and reads of meta.target / meta.field_name (also
+// "P2002" / "P2003" / "P2025" / "P2014" (also as an unquoted object key) and reads of meta.target / meta.field_name (also
 // meta?. / meta!. / (meta as T). / ["target"]). Prints `file:line:column  rule  source` and the
 // replacement; --json prints
 // { root, filesScanned, findings: [{ file, line, column, rule, source, replacement }], errors }
-// and nothing else on stdout (usage mistakes and unreadable paths go into `errors`).
+// and nothing else on stdout (usage mistakes and unreadable paths go into `errors`; --help → { usage }).
+// `source` is cut to 200 characters around the match; arguments after `--` are paths.
 // Read-only, exit code 0 always (also on a missing directory or an unknown flag): no --strict.
 // The binary itself: no argument → generator; `doctor` → doctor; `help` / `--help` → usage;
 // any other command → usage on stderr, exit 1 (a typo must not start the generator).
