@@ -278,10 +278,10 @@ Prisma 7 specifics used here:
 ## Status
 
 Phase 0 ✅ · 0.5 ✅ · 1 (typed errors) ✅ · 3 (Zod extension) ✅ · 4 (schema bridge) ✅ · `doctor` CLI ✅.
-`0.1.0` is published on npm with provenance (2026-11-12, tag `v0.1.0`). `0.2.0` (`toZodIssues`,
-`createSchema`, the generator, `doctor`) is prepared in `package.json` and CHANGELOG.md but **not
-tagged or published**: the owner tags. Run the `release-check` skill before any release; 0.2.0 is
-the first with a `bin`, so run the demo (it exercises `provider = "zod-bridge"` and
-`zod-bridge doctor` from the packed tarball).
+`0.2.0` is published on npm with provenance (2026-11-25, tag `v0.2.0`): `toZodIssues`,
+`createSchema`, the generator and `doctor`. It was the first release through npm trusted
+publishing (OIDC, no token); the Trusted Publisher entry on npmjs.com must keep an empty
+environment name, or `npm publish` fails with E404. Run the `release-check` skill before any
+release.
 
 Next: release, try `createSchema` in a real app, then adapters / DB providers (ROADMAP.md).
