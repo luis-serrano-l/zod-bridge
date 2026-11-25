@@ -8,7 +8,7 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs"
 const schema = "prisma/.zod-bridge.tmp.prisma"
 const block = `
 generator zodBridge {
-  provider   = "node ./dist/adapters/prisma/generator.js"
+  provider   = "node ./dist/cli.js"
   output     = "../tests/generated/zod-bridge.ts"
   importPath = "../../src/adapters/prisma/index.js"
 }

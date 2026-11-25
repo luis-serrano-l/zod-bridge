@@ -13,6 +13,7 @@ scripts, CI, exports, or a design decision, update the matching section here.
    check functions (`prismaUnique`, `prismaUniqueComposite`).
 3. A schema bridge: a Prisma generator writes model descriptors, `createSchema` turns one into a
    Zod schema with both layers wired.
+4. `zod-bridge doctor`: a read-only CLI that lists hand-rolled Prisma error handling in a project.
 
 Long-form docs live elsewhere; do not duplicate them here:
 
@@ -34,6 +35,7 @@ npm run test:watch
 npx vitest run tests/prisma.test.ts   # single file
 npx prisma generate      # regenerate client after editing prisma/schema.prisma
 npm run generate:models  # build, then rewrite tests/generated/zod-bridge.ts through a real `prisma generate`
+npm run build && node dist/cli.js doctor [dir] [--json]   # the doctor command from source
 cd examples/demo && docker compose up --build --abort-on-container-exit && docker compose down -v
 ```
 
@@ -55,13 +57,16 @@ src/
     errors.ts                 # error classes + meta-shape parsing (the fragile part)
     helpers.ts                # handlePrismaError, findOrThrow, toZodIssues, prismaUnique, prismaUniqueComposite
     schema.ts                 # createSchema, defineModel, ModelDescriptor
-    generator/                # Prisma generator: emit.ts (DMMF → source), rpc.ts (protocol), bin.ts (entry)
+    generator/                # Prisma generator: emit.ts (DMMF → source), rpc.ts (protocol), run.ts (stdin loop)
+  cli.ts                      # the `zod-bridge` binary: `doctor` → doctor/run.ts, no command → the generator
+  doctor/                     # scan.ts (pure: source text → findings), run.ts (walk, args, text / JSON report)
   internal/error-adapter.ts   # single place to swap in Prisma-native typed errors if they ever ship
   internal/plain-object.ts    # isPlainObject, shared by core and adapters — must stay DB-free
   internal/messages.ts        # uniqueMessage(), shared by unique() and toZodIssues — must stay DB-free
 tests/
   core.test.ts, prisma.test.ts        # unit (mocked PrismaClientKnownRequestError)
   schema.test.ts, generator.test.ts   # unit: createSchema (mock delegate), emitter + generator protocol
+  doctor.test.ts                      # unit: scanner on fixture strings, runDoctor on a temp directory
   types.test.ts                       # compile-time checks via @ts-expect-error (enforced by typecheck)
   generated/zod-bridge.ts             # generator output for prisma/schema.prisma, committed (generate:models)
   integration/postgres.test.ts        # real Postgres
@@ -80,7 +85,7 @@ Package exports (tsup entries must match `package.json` `exports`):
 |---|---|---|
 | `zod-bridge` | `src/index.ts` | Never import `@prisma/client` here. Core must work with any future adapter. |
 | `zod-bridge/prisma` | `src/adapters/prisma/index.ts` | Only place that touches Prisma. |
-| `bin: zod-bridge` | `src/adapters/prisma/generator/bin.ts` | Prisma generator (`provider = "zod-bridge"`). Must import neither `zod` nor `@prisma/client`: it only writes text. |
+| `bin: zod-bridge` | `src/cli.ts` | `zod-bridge doctor` when `argv[2] === "doctor"`, otherwise the Prisma generator (`provider = "zod-bridge"`; Prisma spawns it without arguments). Must import neither `zod` nor `@prisma/client`: it only reads and writes text. |
 
 Adding an adapter (Drizzle, Kysely): new folder `src/adapters/<name>/`, new tsup entry, new
 `exports` key. Core and the Prisma adapter stay untouched. See ROADMAP.md.
@@ -143,6 +148,19 @@ createSchema(model, descriptor, { pick | omit (one required), fields?, mode?: "c
 // relations and Unsupported skipped), primaryKey ([] if none), unique groups, columns for @map.
 // DateTime → a file-level `dateTime` const (emitted only when used): Date or ISO 8601 string with
 // Z / offset in, Date out. That is exactly what Prisma accepts; do not loosen it to z.coerce.date().
+
+// CLI: npx zod-bridge doctor [dir | file] [--json]
+// Textual scan of .ts/.tsx/.js/.jsx/.mts/.cts/.mjs/.cjs (not .d.ts; node_modules, dist, coverage,
+// dot-directories, symlinks and whole-line comments skipped; build / out skipped only next to a
+// package.json; an explicit file is scanned whatever its extension) for the quoted codes
+// "P2002" / "P2003" / "P2025" / "P2014" and reads of meta.target / meta.field_name (also
+// meta?. / meta!. / (meta as T). / ["target"]). Prints `file:line:column  rule  source` and the
+// replacement; --json prints
+// { root, filesScanned, findings: [{ file, line, column, rule, source, replacement }], errors }
+// and nothing else on stdout (usage mistakes and unreadable paths go into `errors`).
+// Read-only, exit code 0 always (also on a missing directory or an unknown flag): no --strict.
+// The binary itself: no argument → generator; `doctor` → doctor; `help` / `--help` → usage;
+// any other command → usage on stderr, exit 1 (a typo must not start the generator).
 ```
 
 `handlePrismaError` takes **no options object**. A per-constraint message map was considered and
@@ -178,6 +196,9 @@ dropped (see DECISIONS.md); Phase 4's `createSchema` is where that translation b
   one response per **stderr** line, methods `getManifest` and `generate`. No
   `@prisma/generator-helper` dependency. Anything printed to stderr that is not JSON shows up as a
   generator error in Prisma.
+- **`doctor` always exits 0.** It is a report for people and agents, not a CI gate (owner
+  decision, DECISIONS.md). Do not add `--strict` or a non-zero exit. Its replacement texts
+  (`REPLACEMENTS` in `src/doctor/scan.ts`) name public exports: update them when the API changes.
 - **Composite fields are arrays** (`["userId", "postId"]`), never comma-joined strings.
 - **Error field extraction is version-dependent** (`errors.ts`). Order of fallbacks, keep it:
   1. `meta.driverAdapterError.cause.constraint.fields` — Prisma 7 + driver adapter, ≤ 7.9
@@ -210,7 +231,8 @@ Do not bump these without checking the reason still holds.
   `setup.ts` sets `DATABASE_URL` and runs `prisma db push`. Pins real `meta` shapes, the race
   window (`unique()` + `handlePrismaError`), composite unique, FK, and not-found. 60s timeout.
 - **Demo** (`examples/demo`): builds and `npm pack`s the library, installs the tarball in a plain
-  consumer app, runs `prisma generate` with the `zod-bridge` generator, runs every feature against Postgres. Use it to verify the published artifact
+  consumer app, runs `prisma generate` with the `zod-bridge` generator, runs every feature against Postgres and
+  `npx zod-bridge doctor` on `legacy/users.ts`. Use it to verify the published artifact
   (exports map, `.d.ts`, ESM resolution), not just the source.
 
 Prisma 7 specifics used here:
@@ -254,10 +276,11 @@ Prisma 7 specifics used here:
 
 ## Status
 
-Phase 0 ✅ · 0.5 ✅ · 1 (typed errors) ✅ · 3 (Zod extension) ✅ · 4 (schema bridge) ✅ built, **unreleased**.
-`0.1.0` is published on npm with provenance (2026-11-12, tag `v0.1.0`). `toZodIssues`,
-`createSchema` and the generator are under `[Unreleased]` in CHANGELOG.md. Run the `release-check`
-skill before any further release; the next one adds a `bin`, so run the demo (it exercises
-`provider = "zod-bridge"` from the packed tarball).
+Phase 0 ✅ · 0.5 ✅ · 1 (typed errors) ✅ · 3 (Zod extension) ✅ · 4 (schema bridge) ✅ · `doctor` CLI ✅.
+`0.1.0` is published on npm with provenance (2026-11-12, tag `v0.1.0`). `0.2.0` (`toZodIssues`,
+`createSchema`, the generator, `doctor`) is prepared in `package.json` and CHANGELOG.md but **not
+tagged or published**: the owner tags. Run the `release-check` skill before any release; 0.2.0 is
+the first with a `bin`, so run the demo (it exercises `provider = "zod-bridge"` and
+`zod-bridge doctor` from the packed tarball).
 
 Next: release, try `createSchema` in a real app, then adapters / DB providers (ROADMAP.md).

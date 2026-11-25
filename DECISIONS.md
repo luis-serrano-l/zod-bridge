@@ -194,3 +194,25 @@ available at runtime, so a Prisma generator writes them at `prisma generate` tim
 - **Limits.** `Unsupported(...)` columns and relations are skipped, and a key or constraint that
   includes one is dropped. `@@unique(map: "custom")` on Prisma 7.10+ cannot be matched from the
   index name, so its lost-race error is rethrown rather than mislabelled.
+
+## `zod-bridge doctor`
+
+`npx zod-bridge doctor [dir] [--json]` lists the hand-rolled Prisma error handling a project
+still has, with the zod-bridge replacement for each hit. It gives a person or an agent a concrete
+reason to adopt the library, and a list of call sites to start from.
+
+- **Always exits 0, no `--strict`.** It is a report, not a gate. A textual match is a place to
+  look at, not a proven bug, and a non-zero exit would push people to silence it instead of
+  reading it. A missing directory or an unknown flag is reported in the output, exit code 0 too.
+- **A textual scan, not an AST.** The targets are literals (`"P2002"`, `meta.target`) that a
+  regular expression finds reliably, and a parser would be the package's first runtime dependency.
+  The cost is accepted: a code inside a string or a trailing comment is reported, and a
+  destructured `const { target } = e.meta` is missed. Whole-line comments are skipped; block
+  comments are not tracked across lines (a `/*` inside a glob string would hide the rest of a file).
+- **One binary, dispatched on the first argument.** `zod-bridge` was already the Prisma generator,
+  and `npx zod-bridge doctor` needs the binary to carry the package name. Prisma spawns a
+  generator without arguments, so only a bare `zod-bridge` is the generator: `doctor` runs the
+  scan, and any other command prints the usage and exits 1 instead of waiting on stdin. Rejected: a
+  second binary (`zod-bridge-doctor`), which `npx zod-bridge doctor` would not reach.
+- **Paths are relative to the working directory**, so `file:line:column` is clickable in a
+  terminal and usable as-is by an agent, whichever directory was scanned.

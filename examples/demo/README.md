@@ -9,3 +9,5 @@ docker compose down -v   # clean up
 ```
 
 The script is [`main.ts`](./main.ts). No interaction needed; it prints each scenario and exits.
+The last scenario runs `npx zod-bridge doctor` on [`legacy/users.ts`](./legacy/users.ts), a route
+written without the library.

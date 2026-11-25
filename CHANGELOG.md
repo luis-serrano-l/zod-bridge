@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-25
+
 ### Changed
 
 - Typed error messages now name the fix after the problem (`<problem>. Fix: <what to do>.`), and
@@ -16,6 +18,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `npx zod-bridge doctor [dir] [--json]`: lists hand-rolled Prisma error handling in a project
+  (the quoted codes `"P2002"`, `"P2003"`, `"P2025"`, `"P2014"`, and reads of `meta.target` /
+  `meta.field_name`) as `file:line:column` with the zod-bridge replacement for each. Read-only,
+  always exits 0; `--json` for scripts and AI agents.
 - `createSchema(model, descriptor, options)` in `zod-bridge/prisma`: the Zod schema of a Prisma
   model with a uniqueness check for every `@unique` / `@@unique`, update exclusion through the
   model's real primary key, and `schema.toZodIssues(err)` to report a lost race as the issue the

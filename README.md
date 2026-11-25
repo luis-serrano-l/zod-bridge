@@ -30,6 +30,7 @@
 - [Race conditions](#race-conditions)
   - [One error branch for both layers](#one-error-branch-for-both-layers)
 - [Schema bridge: createSchema](#schema-bridge-createschema)
+- [Find what to replace: zod-bridge doctor](#find-what-to-replace-zod-bridge-doctor)
 - [Install details](#install-details)
 - [Demo](#demo)
 - [AI agents](#ai-agents)
@@ -170,6 +171,7 @@ safety net for the request that loses a race (see [Race conditions](#race-condit
 | `zod-bridge/prisma` | `findOrThrow(() => query)` | Throws `PrismaNotFoundError` instead of returning `null` |
 | `zod-bridge/prisma` | `createSchema(model, descriptor, { pick \| omit, fields?, mode?, unique? })` | Zod schema of a Prisma model with every unique check wired, plus `schema.toZodIssues(e)` |
 | `zod-bridge` (Prisma generator) | `provider = "zod-bridge"` | Writes the `<Model>Model` descriptors `createSchema` reads |
+| `zod-bridge` (command) | `npx zod-bridge doctor [dir] [--json]` | Lists hand-rolled Prisma error handling in a project with the replacement for each |
 
 | Prisma code | Class | Extra property |
 |---|---|---|
@@ -442,6 +444,38 @@ await prisma.user.update({ where: { id }, data }).catch(handlePrismaError)
 - Rerun `prisma generate` after editing the Prisma schema. Options of the generator block:
   `output` (a `.ts` file) and `importPath` (default `"zod-bridge/prisma"`).
 
+## Find what to replace: zod-bridge doctor
+
+`doctor` scans a project for the code this library replaces and prints where it is:
+
+```bash
+npx zod-bridge doctor          # the current directory
+npx zod-bridge doctor src      # one directory (or one file)
+npx zod-bridge doctor --json   # for scripts and AI agents
+```
+
+```
+src/routes/users.ts:12:22  P2002  if (err.code === "P2002") {
+  → handlePrismaError(e) rethrows it as PrismaUniqueConstraintError (fields: string[]); toZodIssues(e) turns it into a Zod issue; unique(schema, prismaUnique(model, field)) reports the conflict before the write.
+
+src/routes/users.ts:13:49  meta.target  return { status: 409, body: { fields: err.meta?.target ?? [] } }
+  → read PrismaUniqueConstraintError.fields after handlePrismaError(e): meta.target is missing on Prisma 7 with a driver adapter.
+
+2 findings in 1 file (14 scanned). ...
+```
+
+- It looks for the quoted codes `"P2002"`, `"P2003"`, `"P2025"` and `"P2014"` (comparisons, `switch`
+  cases, lists) and for reads of `meta.target` and `meta.field_name`, in `.ts`, `.tsx`, `.js`,
+  `.jsx`, `.mts`, `.cts`, `.mjs` and `.cjs` files.
+- `node_modules`, `dist`, `coverage`, dot-directories, symlinks and `.d.ts` files are skipped, and
+  so are `build` and `out` next to a `package.json` (a `src/build/` is scanned). Whole-line
+  comments are skipped. A file passed instead of a directory is scanned whatever its extension.
+- It is read-only and always exits 0: it is a report, not a CI gate.
+- `--json` prints `{ root, filesScanned, findings, errors }`. Each finding is
+  `{ file, line, column, rule, source, replacement }`, with `file` relative to the working directory.
+  With `--json`, stdout is always that object: an unreadable path or a mistyped option is in `errors`.
+- The match is textual: a hit is a place to look at, not a proven bug.
+
 ## Install details
 
 Peer dependencies: `zod ^4.0.0`, `@prisma/client ^5–7` (optional, only needed for the `/prisma` import). Requires Node ≥ 22.12. ESM only.
@@ -450,7 +484,7 @@ Peer dependencies: `zod ^4.0.0`, `@prisma/client ^5–7` (optional, only needed 
 |--------|----------|------------|
 | `zod-bridge` | `unique()`, `uniqueComposite()`, ORM-agnostic | `zod` only |
 | `zod-bridge/prisma` | Typed error classes, `handlePrismaError`, `findOrThrow`, `prismaUnique*`, `createSchema` | `zod` + `@prisma/client` |
-| `zod-bridge` binary | Prisma generator for `createSchema` (`provider = "zod-bridge"`) | nothing at generate time |
+| `zod-bridge` binary | Prisma generator for `createSchema` (`provider = "zod-bridge"`), and `zod-bridge doctor` | nothing: neither `zod` nor `@prisma/client` is loaded |
 
 The root export has no database dependency, so the validators work with any ORM or a raw query.
 Prisma is the only adapter today; others (e.g. Drizzle) can be added as `zod-bridge/<adapter>`.
@@ -498,6 +532,9 @@ If an AI coding agent writes your Prisma + Zod code, `zod-bridge` pays off twice
 **Less code to generate.** Without it, every call site needs the same hand-written boilerplate: check `e.code === "P2002"`, parse `meta.target`, fall back to `meta.constraint.index` on Prisma 7.10+ (which no longer ships a field list), and hand-roll an async `.refine()` with a `findFirst` plus an exclusion clause for updates. With it, that collapses to `instanceof PrismaUniqueConstraintError` and one `unique()` call.
 
 **Fewer wrong-first-try generations.** Agents burn most of their tokens on retry loops, not on the initial write. Prisma's error shape has gotchas an agent won't know about a given project — driver-adapter errors carrying only the index name, composite primary keys, excluding the record being edited on update. Each one is a failing test, a re-read, and a rewrite. `handlePrismaError` and `prismaUnique` encode that knowledge once, so the agent gets it right on the first pass.
+
+To find the call sites in an existing project, run `npx zod-bridge doctor --json`
+(see [zod-bridge doctor](#find-what-to-replace-zod-bridge-doctor)).
 
 Two things an agent should be told at the call site:
 

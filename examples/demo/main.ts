@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process"
 import { PrismaPg } from "@prisma/adapter-pg"
 import { PrismaClient } from "@prisma/client"
 import { z } from "zod"
@@ -202,6 +203,21 @@ async function main(): Promise<void> {
   ok(
     `{ id: ${alice.id}, email: "alice@example.com" } → ${ownPatch.success ? "valid (own row excluded by primary key)" : "invalid"}`,
   )
+
+  // 9 ---------------------------------------------------------------------------
+  section("zod-bridge doctor: find hand-rolled Prisma error handling")
+  code(`npx zod-bridge doctor legacy --json  // read-only, always exits 0`)
+  const report = JSON.parse(
+    execFileSync("npx", ["zod-bridge", "doctor", "legacy", "--json"], { encoding: "utf8" }),
+  ) as { findings: { file: string; line: number; rule: string; replacement: string }[] }
+  for (const f of report.findings) {
+    caught(`${f.file}:${f.line}  ${yellow(f.rule)}  ${dim(`→ ${f.replacement.split(";")[0]}`)}`)
+  }
+  const found = report.findings.map((f) => f.rule).join(", ")
+  if (found !== "P2002, meta.target, P2025") {
+    throw new Error(`doctor: expected P2002, meta.target, P2025 in legacy/users.ts, got ${found}`)
+  }
+  ok(`${report.findings.length} findings in legacy/users.ts, each with its zod-bridge replacement`)
 
   console.log(
     `\n${green(bold("Done."))} ${dim("All errors above were typed — no magic string codes.")}\n`,

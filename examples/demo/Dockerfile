@@ -17,6 +17,7 @@ COPY --from=lib /lib/zod-bridge.tgz /tmp/zod-bridge.tgz
 RUN npm install && npm install /tmp/zod-bridge.tgz
 COPY examples/demo/prisma ./prisma
 COPY examples/demo/prisma.config.ts examples/demo/main.ts ./
+COPY examples/demo/legacy ./legacy
 RUN npx prisma generate
 ENV FORCE_COLOR=1
 CMD ["npm", "start", "--silent"]

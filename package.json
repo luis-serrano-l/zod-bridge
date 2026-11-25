@@ -1,6 +1,6 @@
 {
   "name": "zod-bridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The missing async validation layer for Zod. Typed Prisma errors + DB-aware unique validators.",
   "type": "module",
   "main": "./dist/index.js",
@@ -16,7 +16,7 @@
     }
   },
   "bin": {
-    "zod-bridge": "./dist/adapters/prisma/generator.js"
+    "zod-bridge": "./dist/cli.js"
   },
   "files": [
     "dist"
